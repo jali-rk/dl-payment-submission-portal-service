@@ -1,0 +1,60 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-payment-submissions
+      author: copilot
+      changes:
+        - createTable:
+            tableName: payment_submissions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: portal_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: portal_name_at_submission
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: submitted_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: rejection_reason
+                  type: CLOB
+        - addForeignKeyConstraint:
+            constraintName: fk_submission_portal
+            baseTableName: payment_submissions
+            baseColumnNames: portal_id
+            referencedTableName: payment_portals
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            tableName: payment_submissions
+            indexName: idx_payment_submissions_portal_id
+            columns:
+              - column:
+                  name: portal_id

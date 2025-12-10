@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/payment_portals.yaml
+  - include:
+      file: db/changelog/payment_submissions.yaml
+  - include:
+      file: db/changelog/uploaded_files.yaml

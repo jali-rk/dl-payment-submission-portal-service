@@ -1,0 +1,727 @@
+openapi: 3.0.3
+info:
+  title: DopamineLite Payment Submission Service API
+  version: "1.0.0"
+  description: |
+    Payment Submission Portal microservice for DopamineLite.
+
+    Responsibilities:
+      - Manage payment submission portals (per month/year)
+      - Store and manage payment submissions and their status
+      - Provide data sheet / export capabilities
+
+    This service is called by the BFF only (not directly by MFEs).
+
+servers:
+  - url: https://payment-service.internal/api/v1
+
+tags:
+  - name: Portals
+    description: Payment portals (create, publish/hide, list)
+  - name: Submissions
+    description: Payment submissions and statuses
+  - name: DataSheets
+    description: Data sheet and export operations
+
+security:
+  - serviceAuth: []
+
+components:
+  securitySchemes:
+    serviceAuth:
+      type: apiKey
+      in: header
+      name: X-Service-Token
+
+  parameters:
+    PaginationLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      required: false
+    PaginationOffset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      required: false
+
+  schemas:
+    ErrorObject:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    SubmissionStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+
+    PortalVisibility:
+      type: string
+      enum: [PUBLISHED, HIDDEN]
+
+    ExportFormat:
+      type: string
+      enum: [XLSX, CSV, PDF]
+
+    DataSheetType:
+      type: string
+      enum: [APPROVED, REJECTED, PENDING, ALL]
+
+    PaymentPortal:
+      type: object
+      description: "Internal representation of a payment portal."
+      properties:
+        id:
+          type: string
+          format: uuid
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+        name:
+          type: string
+          description: "Technical name for the portal (unique)."
+        displayName:
+          type: string
+          description: "Name shown to students/admins in UI."
+        isPublished:
+          type: boolean
+          description: "True if visible to students/admins."
+        visibility:
+          $ref: '#/components/schemas/PortalVisibility'
+        createdByAdminId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - month
+        - year
+        - name
+        - displayName
+        - isPublished
+        - visibility
+        - createdByAdminId
+        - createdAt
+        - updatedAt
+
+    PaymentPortalCreateRequest:
+      type: object
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        year:
+          type: integer
+        name:
+          type: string
+          description: "Unique portal key (e.g., 'nov-2025-adv-physics')."
+        displayName:
+          type: string
+        isPublished:
+          type: boolean
+          default: false
+      required:
+        - month
+        - year
+        - name
+        - displayName
+
+    PaymentPortalUpdateRequest:
+      type: object
+      description: "Partial update. Used by admin operations via BFF."
+      properties:
+        displayName:
+          type: string
+        isPublished:
+          type: boolean
+        visibility:
+          $ref: '#/components/schemas/PortalVisibility'
+
+    BulkPortalVisibilityUpdateRequest:
+      type: object
+      properties:
+        portalIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        isPublished:
+          type: boolean
+      required:
+        - portalIds
+        - isPublished
+
+    UploadedFileRef:
+      type: object
+      description: "Reference to a file stored in File Storage Service."
+      properties:
+        fileId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        fileType:
+          type: string
+          example: "application/pdf"
+      required:
+        - fileId
+        - fileName
+        - fileType
+
+    PaymentSubmission:
+      type: object
+      description: "Payment submission stored in this service."
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        portalId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        rejectionReason:
+          type: string
+          nullable: true
+        uploadedFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadedFileRef'
+        portalNameAtSubmission:
+          type: string
+          description: "Portal name as confirmed by student (for audit)."
+        submittedAt:
+          type: string
+          format: date-time
+        lastUpdatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - studentId
+        - portalId
+        - status
+        - uploadedFiles
+        - portalNameAtSubmission
+        - submittedAt
+        - lastUpdatedAt
+
+    PaymentSubmissionCreateRequest:
+      type: object
+      description: |
+        Called by BFF after files are uploaded to File Storage Service.
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        portalNameConfirmation:
+          type: string
+          description: "Portal name re-entered by student."
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadedFileRef'
+      required:
+        - studentId
+        - portalNameConfirmation
+        - files
+
+    PaymentSubmissionStatusUpdateRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        rejectionReason:
+          type: string
+          nullable: true
+          description: "Required when status=REJECTED."
+      required:
+        - status
+
+    PaymentSubmissionListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentSubmission'
+        total:
+          type: integer
+      required:
+        - items
+        - total
+
+paths:
+  #################################
+  # PORTALS
+  #################################
+  /portals:
+    get:
+      tags: [Portals]
+      summary: List payment portals
+      description: |
+        Used by BFF:
+          - `/payment/portals` for student/admin portal listing.
+          - BFF applies role logic (students see only published portals).
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - name: year
+          in: query
+          schema:
+            type: integer
+        - name: isPublished
+          in: query
+          schema:
+            type: boolean
+          description: "Optional filter by publish state."
+        - $ref: '#/components/parameters/PaginationLimit'
+        - $ref: '#/components/parameters/PaginationOffset'
+      responses:
+        '200':
+          description: List of portals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentPortal'
+                  total:
+                    type: integer
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+    post:
+      tags: [Portals]
+      summary: Create a new payment portal
+      description: |
+        Used by BFF `/admin/payment/portals` (POST).
+
+        BFF ensures only MAIN_ADMIN can create portals, according to BRD. :contentReference[oaicite:1]{index=1}
+      security:
+        - serviceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentPortalCreateRequest'
+      responses:
+        '201':
+          description: Portal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPortal'
+        '400':
+          description: Validation error (e.g., duplicate name)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  /portals/{portalId}:
+    get:
+      tags: [Portals]
+      summary: Get portal by ID
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: portalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Portal details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPortal'
+        '404':
+          description: Portal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+    patch:
+      tags: [Portals]
+      summary: Update portal fields
+      description: |
+        Used by BFF for:
+          - Changing displayName
+          - Manually toggling publish/visibility if needed
+        (BFF enforces MAIN_ADMIN permission).
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: portalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentPortalUpdateRequest'
+      responses:
+        '200':
+          description: Portal updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPortal'
+        '404':
+          description: Portal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  /portals/bulk-visibility:
+    patch:
+      tags: [Portals]
+      summary: Bulk update portal publish state
+      description: |
+        Used by BFF `/admin/payment/portals` (PATCH) for publish/unpublish
+        operations driven by main admin. :contentReference[oaicite:2]{index=2}
+      security:
+        - serviceAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkPortalVisibilityUpdateRequest'
+      responses:
+        '200':
+          description: Portals updated successfully
+        '400':
+          description: Invalid portal IDs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  #################################
+  # SUBMISSIONS
+  #################################
+  /portals/{portalId}/submissions:
+    post:
+      tags: [Submissions]
+      summary: Create a new payment submission for a portal
+      description: |
+        Used by BFF `/payment/portals/{portalId}/submissions` (POST).
+
+        Flow:
+          1. BFF uploads files to File Storage Service.
+          2. BFF calls this endpoint with `studentId`, `portalNameConfirmation`,
+             and array of file references.
+          3. Submission is created with status=PENDING by default. :contentReference[oaicite:3]{index=3}
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: portalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentSubmissionCreateRequest'
+      responses:
+        '201':
+          description: Submission created (status=PENDING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSubmission'
+        '400':
+          description: Invalid portal or payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+        '404':
+          description: Portal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  /submissions:
+    get:
+      tags: [Submissions]
+      summary: List payment submissions with filters
+      description: |
+        Used by BFF:
+          - `/payment/submissions/me`  → filter by `studentId`
+          - `/admin/payment/submissions` → filter by `status`, `portalId`, etc.
+            (BFF may join with User Service for email/name/WhatsApp searches). :contentReference[oaicite:4]{index=4}
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: studentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: "Filter submissions of a given student."
+        - name: portalId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/SubmissionStatus'
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Submission date range start (inclusive)."
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Submission date range end (inclusive)."
+        - $ref: '#/components/parameters/PaginationLimit'
+        - $ref: '#/components/parameters/PaginationOffset'
+      responses:
+        '200':
+          description: List of submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSubmissionListResponse'
+
+  /submissions/{submissionId}:
+    get:
+      tags: [Submissions]
+      summary: Get a single submission
+      description: |
+        Used by BFF when showing full details (files, timestamps, status)
+        for a given submission in admin or student views. :contentReference[oaicite:5]{index=5}
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSubmission'
+        '404':
+          description: Submission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  /submissions/{submissionId}/status:
+    patch:
+      tags: [Submissions]
+      summary: Update submission status (approve/reject/pending)
+      description: |
+        Used by BFF `/admin/payment/submissions/{submissionId}` (PATCH).
+
+        Admin workflow from BRD:
+          - Approved: add to official data sheet.
+          - Rejected: must include an explanation.
+          - Pending: default status when submitted.
+        All changes from this endpoint will be used by BFF/Notification Service
+        to send emails to students. :contentReference[oaicite:6]{index=6}
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentSubmissionStatusUpdateRequest'
+      responses:
+        '200':
+          description: Submission updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSubmission'
+        '400':
+          description: Invalid status change (e.g., missing rejectionReason)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+        '404':
+          description: Submission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'
+
+  #################################
+  # DATA SHEETS & EXPORTS
+  #################################
+  /data-sheets/export:
+    get:
+      tags: [DataSheets]
+      summary: Export payment data sheets
+      description: |
+        Used by BFF `/admin/payment/data-sheets/export`.
+
+        Supports all BRD export scenarios: 
+          - Per status (APPROVED, REJECTED, PENDING) or ALL.
+          - Export to XLSX, CSV, or PDF.
+          - Optional filtering by month/year.
+          - Optional subset of submission IDs for “selected rows” export.
+          - Optional `columns` parameter to specify which columns to include
+            and in what order (aligned with updated BFF design).
+
+        Note:
+          - When `submissionIds` is provided, it takes precedence as a filter.
+          - If `columns` is empty or not provided, a default column set is used.
+      security:
+        - serviceAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/DataSheetType'
+          description: "Status selection for data sheet (APPROVED/REJECTED/PENDING/ALL)."
+        - name: format
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/ExportFormat'
+        - name: month
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - name: year
+          in: query
+          schema:
+            type: integer
+        - name: columns
+          in: query
+          description: |
+            Column keys to be included in export, in desired order.
+            Typical keys (mapped in BFF/Report layer to actual headers):
+              - studentName
+              - email
+              - whatsappNumber
+              - codeNumber
+              - school
+              - address
+              - portalName
+              - portalMonth
+              - portalYear
+              - status
+              - rejectionReason
+              - submittedAt
+              - lastUpdatedAt
+          schema:
+            type: array
+            items:
+              type: string
+            example:
+              - studentName
+              - email
+              - whatsappNumber
+              - codeNumber
+              - portalName
+              - status
+              - submittedAt
+          style: form
+          explode: true
+        - name: submissionIds
+          in: query
+          description: |
+            Optional explicit list of submission IDs to export.
+            Enables “export selected rows” behavior from the BRD.
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Exported data sheet file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid parameters (unsupported column key, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorObject'

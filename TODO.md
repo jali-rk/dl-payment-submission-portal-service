@@ -1,0 +1,2 @@
+- [ ] Spring Boot -> 3.4
+- [ ] Spring -> 6.2

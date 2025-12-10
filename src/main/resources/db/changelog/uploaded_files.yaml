@@ -1,0 +1,47 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-uploaded-files
+      author: copilot
+      changes:
+        - createTable:
+            tableName: uploaded_files
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: submission_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_type
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_file_submission
+            baseTableName: uploaded_files
+            baseColumnNames: submission_id
+            referencedTableName: payment_submissions
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            tableName: uploaded_files
+            indexName: idx_uploaded_files_submission_id
+            columns:
+              - column:
+                  name: submission_id
