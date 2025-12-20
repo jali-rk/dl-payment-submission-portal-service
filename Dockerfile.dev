@@ -11,17 +11,15 @@ WORKDIR /app
 
 # Copy Maven files
 COPY pom.xml ./
-COPY .mvn ./.mvn
-COPY mvnw ./
 
 # Download dependencies (this layer will be cached)
-RUN ./mvnw dependency:go-offline -B || true
+RUN mvn dependency:go-offline -B || true
 
 # Copy source code
 COPY src ./src
 
-# Expose Spring Boot default port
-EXPOSE 8080
+# Expose Spring Boot port
+EXPOSE 9000
 
 # Run Spring Boot with DevTools for hot reloading
-CMD ["./mvnw", "spring-boot:run"]
+CMD ["mvn", "spring-boot:run"]

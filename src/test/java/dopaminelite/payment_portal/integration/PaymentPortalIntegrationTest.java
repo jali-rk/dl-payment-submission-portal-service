@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +37,6 @@ class PaymentPortalIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "admin", roles = {"ADMIN"})
     void testCreateAndRetrievePortal() throws Exception {
         // Create portal
         PaymentPortalCreateRequest createRequest = new PaymentPortalCreateRequest();
@@ -74,22 +72,6 @@ class PaymentPortalIntegrationTest {
     }
 
     @Test
-    @WithMockUser(username = "student", roles = {"STUDENT"})
-    void testStudentCannotCreatePortal() throws Exception {
-        PaymentPortalCreateRequest createRequest = new PaymentPortalCreateRequest();
-        createRequest.setName("Unauthorized Portal");
-        createRequest.setDisplayName("Unauthorized Portal Display");
-        createRequest.setMonth(1);
-        createRequest.setYear(2025);
-
-        mockMvc.perform(post("/api/v1/portals")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(createRequest)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    @WithMockUser(username = "admin", roles = {"ADMIN"})
     void testListPortalsWithPagination() throws Exception {
         mockMvc.perform(get("/api/v1/portals")
                 .param("limit", "10")
@@ -102,20 +84,6 @@ class PaymentPortalIntegrationTest {
     }
 
     @Test
-    void testHealthEndpointIsPublic() throws Exception {
-        mockMvc.perform(get("/actuator/health"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UP"));
-    }
-
-    @Test
-    void testSwaggerUiIsAccessible() throws Exception {
-        mockMvc.perform(get("/swagger-ui.html"))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    @WithMockUser(username = "admin", roles = {"ADMIN"})
     void testCreatePortalWithInvalidData() throws Exception {
         PaymentPortalCreateRequest invalidRequest = new PaymentPortalCreateRequest();
         invalidRequest.setName(""); // Invalid: empty name

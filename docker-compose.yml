@@ -5,15 +5,15 @@ services:
     image: postgres:16-alpine
     container_name: payment-portal-db
     environment:
-      POSTGRES_DB: payment_portal
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: ${POSTGRES_DB:-payment_portal}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data_payment_portal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d payment_portal"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-payment_portal}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,30 +22,23 @@ services:
     image: dpage/pgadmin4:latest
     container_name: payment-portal-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
       - "5050:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-      - ./pgadmin-servers.json:/pgadmin4/servers.json
-      - ./pgpass:/pgpass
     depends_on:
       - postgres
-    entrypoint: >
-      /bin/sh -c "
-      chmod 600 /pgpass;
-      /entrypoint.sh
-      "
 
   payment-portal:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: payment-portal-app
     ports:
-      - "8080:8080"
+      - "9000:9000"
     volumes:
       - ./src:/app/src
       - ./target:/app/target
@@ -53,9 +46,9 @@ services:
     environment:
       - SPRING_DEVTOOLS_RESTART_ENABLED=true
       - SPRING_DEVTOOLS_LIVERELOAD_ENABLED=true
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/payment_portal
-      - SPRING_DATASOURCE_USERNAME=admin
-      - SPRING_DATASOURCE_PASSWORD=admin123
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-payment_portal}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - SPRING_JPA_SHOW_SQL=true
     depends_on:
