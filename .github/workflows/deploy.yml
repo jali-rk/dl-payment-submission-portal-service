@@ -44,9 +44,17 @@ jobs:
       # 7. Build and push Docker image to ECR
       - name: Build & push Docker image
         run: |
-          docker build -t ${{ vars.ECR_REPOSITORY }} .
-          docker tag ${{ vars.ECR_REPOSITORY }}:latest ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:latest
-          docker push ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:latest
+          ECR_REPO=$(echo "${{ vars.ECR_REPOSITORY }}" | tr -d '\r\n' | xargs)
+          AWS_ACCOUNT=$(echo "${{ vars.AWS_ACCOUNT_ID }}" | tr -d '\r\n' | xargs)
+          AWS_REG=$(echo "${{ vars.AWS_REGION }}" | tr -d '\r\n' | xargs)
+          IMAGE_URI="${AWS_ACCOUNT}.dkr.ecr.${AWS_REG}.amazonaws.com/${ECR_REPO}:latest"
+          
+          echo "Building image: ${ECR_REPO}:latest"
+          echo "Target URI: ${IMAGE_URI}"
+          
+          docker build -t "${ECR_REPO}:latest" .
+          docker tag "${ECR_REPO}:latest" "${IMAGE_URI}"
+          docker push "${IMAGE_URI}"
 
       # 8. Force ECS service redeploy so it pulls the new image
       - name: Force ECS service redeploy
