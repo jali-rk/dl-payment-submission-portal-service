@@ -52,10 +52,8 @@ jobs:
           echo $ECR_REPOSITORY
           echo $AWS_ACCOUNT_ID
           echo $AWS_REGION
-          docker tag $ECR_REPOSITORY:latest \
-            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
-          docker push \
-            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker tag $ECR_REPOSITORY:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
 
       # # 8. Force ECS service redeploy so it pulls the new image
       # - name: Force ECS service redeploy
