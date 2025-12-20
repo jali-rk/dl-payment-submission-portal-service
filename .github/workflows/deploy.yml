@@ -48,7 +48,7 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
-          docker build -f Dockerfile.prod -t $ECR_REPOSITORY .
+          docker build -f Dockerfile.prod -t $ECR_REPOSITORY:latest .
           echo $ECR_REPOSITORY
           echo $AWS_ACCOUNT_ID
           echo $AWS_REGION
