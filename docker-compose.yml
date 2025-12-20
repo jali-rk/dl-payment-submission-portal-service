@@ -38,7 +38,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: payment-portal-app
     ports:
-      - "9000:9000"
+      - "8080:8080"
     volumes:
       - ./src:/app/src
       - ./target:/app/target

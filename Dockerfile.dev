@@ -19,7 +19,7 @@ RUN mvn dependency:go-offline -B || true
 COPY src ./src
 
 # Expose Spring Boot port
-EXPOSE 9000
+EXPOSE 8080
 
 # Run Spring Boot with DevTools for hot reloading
 CMD ["mvn", "spring-boot:run"]
