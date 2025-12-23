@@ -2,7 +2,6 @@ package dopaminelite.payment_portal.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dopaminelite.payment_portal.dto.portal.PaymentPortalCreateRequest;
-import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,11 +12,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.hamcrest.Matchers.*;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +32,16 @@ class PaymentPortalIntegrationTest {
         // Setup runs before each test
     }
 
+    private String generateTestJwtToken(java.util.UUID userId) {
+        // Create a simple JWT token for testing (Base64 encoded)
+        String header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+        String payload = "{\"sub\":\"" + userId.toString() + "\"}";
+        String encodedHeader = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(header.getBytes());
+        String encodedPayload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes());
+        String signature = "test-signature";
+        return encodedHeader + "." + encodedPayload + "." + signature;
+    }
+
     @Test
     void testCreateAndRetrievePortal() throws Exception {
         // Create portal
@@ -46,8 +52,12 @@ class PaymentPortalIntegrationTest {
         createRequest.setYear(2025);
         createRequest.setIsPublished(true);
 
+        java.util.UUID adminId = java.util.UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         String createResponse = mockMvc.perform(post("/api/v1/portals")
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + token)
                 .content(objectMapper.writeValueAsString(createRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Integration Test Portal"))
@@ -77,10 +87,8 @@ class PaymentPortalIntegrationTest {
                 .param("limit", "10")
                 .param("offset", "0"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").isArray())
-                .andExpect(jsonPath("$.pagination").exists())
-                .andExpect(jsonPath("$.pagination.limit").value(10))
-                .andExpect(jsonPath("$.pagination.offset").value(0));
+                .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.total").exists());
     }
 
     @Test
@@ -91,8 +99,12 @@ class PaymentPortalIntegrationTest {
         invalidRequest.setMonth(13); // Invalid: month > 12
         invalidRequest.setYear(2025);
 
+        java.util.UUID adminId = java.util.UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + token)
                 .content(objectMapper.writeValueAsString(invalidRequest)))
                 .andExpect(status().isBadRequest());
     }

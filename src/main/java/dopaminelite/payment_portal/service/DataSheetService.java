@@ -1,5 +1,9 @@
 package dopaminelite.payment_portal.service;
 
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.UploadedFile;
 import dopaminelite.payment_portal.entity.enums.DataSheetType;
@@ -11,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -121,9 +126,83 @@ public class DataSheetService {
     }
     
     private byte[] generatePdf(List<PaymentSubmission> submissions, List<String> columns) {
-        // Placeholder implementation - would use iText or Apache PDFBox
-        // For now, return CSV format as fallback
-        return generateCsv(submissions, columns);
+        List<String> selectedColumns = (columns != null && !columns.isEmpty()) 
+                ? columns 
+                : getDefaultColumns();
+        
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document document = new Document(PageSize.A4.rotate());
+            PdfWriter.getInstance(document, baos);
+            document.open();
+            
+            // Add title
+            Font titleFont = new Font(Font.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("Payment Submissions Report", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingAfter(20);
+            document.add(title);
+            
+            // Add timestamp
+            Font infoFont = new Font(Font.HELVETICA, 10, Font.NORMAL, java.awt.Color.GRAY);
+            Paragraph timestamp = new Paragraph("Generated: " + LocalDate.now().format(DATE_FORMATTER), infoFont);
+            timestamp.setAlignment(Element.ALIGN_RIGHT);
+            timestamp.setSpacingAfter(10);
+            document.add(timestamp);
+            
+            // Create table
+            PdfPTable table = new PdfPTable(selectedColumns.size());
+            table.setWidthPercentage(100);
+            table.setSpacingBefore(10);
+            
+            // Add header row
+            Font headerFont = new Font(Font.HELVETICA, 10, Font.BOLD, java.awt.Color.WHITE);
+            for (String column : selectedColumns) {
+                PdfPCell headerCell = new PdfPCell(new Phrase(formatColumnName(column), headerFont));
+                headerCell.setBackgroundColor(new java.awt.Color(52, 73, 94));
+                headerCell.setPadding(8);
+                headerCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                table.addCell(headerCell);
+            }
+            
+            // Add data rows
+            Font cellFont = new Font(Font.HELVETICA, 9, Font.NORMAL);
+            for (PaymentSubmission submission : submissions) {
+                for (String column : selectedColumns) {
+                    PdfPCell cell = new PdfPCell(new Phrase(getCellValue(submission, column), cellFont));
+                    cell.setPadding(5);
+                    table.addCell(cell);
+                }
+            }
+            
+            document.add(table);
+            
+            // Add footer
+            Paragraph footer = new Paragraph("Total Records: " + submissions.size(), infoFont);
+            footer.setSpacingBefore(10);
+            document.add(footer);
+            
+            document.close();
+            return baos.toByteArray();
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate PDF", e);
+        }
+    }
+    
+    private String formatColumnName(String column) {
+        return switch (column.toLowerCase()) {
+            case "id" -> "ID";
+            case "studentid" -> "Student ID";
+            case "portalname", "portal" -> "Portal Name";
+            case "status" -> "Status";
+            case "submittedat" -> "Submitted At";
+            case "filecount" -> "File Count";
+            case "files" -> "Files";
+            case "rejectionreason" -> "Rejection Reason";
+            case "lastupdatedat" -> "Last Updated";
+            case "portalid" -> "Portal ID";
+            default -> column;
+        };
     }
     
     private List<String> getDefaultColumns() {

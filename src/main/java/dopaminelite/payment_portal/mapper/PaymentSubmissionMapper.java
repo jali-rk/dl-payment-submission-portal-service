@@ -8,9 +8,18 @@ import org.springframework.stereotype.Component;
 
 import java.util.stream.Collectors;
 
+/**
+ * Mapper for converting PaymentSubmission entities to response DTOs.
+ */
 @Component
 public class PaymentSubmissionMapper {
     
+    /**
+     * Converts a PaymentSubmission entity to a PaymentSubmissionResponse DTO.
+     *
+     * @param submission the entity to convert, can be null
+     * @return the response DTO, or null if the input is null
+     */
     public PaymentSubmissionResponse toResponse(PaymentSubmission submission) {
         if (submission == null) {
             return null;
@@ -37,6 +46,12 @@ public class PaymentSubmissionMapper {
         return response;
     }
     
+    /**
+     * Converts an UploadedFile entity to an UploadedFileRefDto.
+     *
+     * @param file the entity to convert
+     * @return the DTO containing file metadata
+     */
     private UploadedFileRefDto toFileRefDto(UploadedFile file) {
         UploadedFileRefDto dto = new UploadedFileRefDto();
         dto.setFileId(file.getFileId());

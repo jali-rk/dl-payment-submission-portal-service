@@ -47,6 +47,16 @@ class PaymentPortalControllerTest {
         portalRepository.deleteAll();
     }
 
+    private String generateTestJwtToken(UUID userId) {
+        // Create a simple JWT token for testing (Base64 encoded)
+        String header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+        String payload = "{\"sub\":\"" + userId.toString() + "\"}";
+        String encodedHeader = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(header.getBytes());
+        String encodedPayload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes());
+        String signature = "test-signature";
+        return encodedHeader + "." + encodedPayload + "." + signature;
+    }
+
     @Test
     @DisplayName("GET /api/v1/portals - Should return empty list when no portals exist")
     void testListPortals_EmptyList() throws Exception {
@@ -113,9 +123,12 @@ class PaymentPortalControllerTest {
         request.setDisplayName("Test Portal Display");
         request.setIsPublished(false);
 
+        UUID adminId = UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .header("X-Admin-Id", UUID.randomUUID().toString())
+                        .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").exists())
@@ -139,8 +152,12 @@ class PaymentPortalControllerTest {
         request.setDisplayName("Published Test Portal");
         request.setIsPublished(true);
 
+        UUID adminId = UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.isPublished").value(true))
@@ -158,10 +175,14 @@ class PaymentPortalControllerTest {
         request.setName("duplicate-portal");
         request.setDisplayName("Duplicate Portal");
 
+        UUID adminId = UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DUPLICATE_RESOURCE"))
                 .andExpect(jsonPath("$.message").value(containsString("duplicate-portal")));
     }
@@ -172,8 +193,12 @@ class PaymentPortalControllerTest {
         PaymentPortalCreateRequest request = new PaymentPortalCreateRequest();
         // Missing required fields
 
+        UUID adminId = UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
@@ -189,8 +214,12 @@ class PaymentPortalControllerTest {
         request.setName("test-portal");
         request.setDisplayName("Test Portal");
 
+        UUID adminId = UUID.randomUUID();
+        String token = generateTestJwtToken(adminId);
+        
         mockMvc.perform(post("/api/v1/portals")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));

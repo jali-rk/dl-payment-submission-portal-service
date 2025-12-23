@@ -1,5 +1,7 @@
 package dopaminelite.payment_portal.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.portal.BulkPortalVisibilityUpdateRequest;
 import dopaminelite.payment_portal.dto.portal.PaymentPortalCreateRequest;
@@ -11,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Base64;
 import java.util.UUID;
 
 /**
@@ -65,23 +69,38 @@ public class PaymentPortalController {
     @PostMapping
     public ResponseEntity<PaymentPortalResponse> createPortal(
             @Valid @RequestBody PaymentPortalCreateRequest request,
-            // @RequestHeader(value = "X-Admin-Id", required = false) String adminIdHeader
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        // In production, adminId would come from authenticated user context
-        // For now, accepting it from header or using a default
-        UUID adminId = adminIdHeader != null ? UUID.fromString(adminIdHeader) : UUID.randomUUID();
-        
+        UUID adminId = extractUserIdFromJwt(authorizationHeader)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User ID not found"));
         PaymentPortalResponse response = portalService.createPortal(request, adminId);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
     
     @GetMapping("/{portalId}")
+    /**
+     * Retrieves a payment portal by its unique identifier.
+     *
+     * @param portalId the UUID of the payment portal to retrieve
+     * @return the payment portal details
+     * @throws ResourceNotFoundException if a portal with the given ID does not exist
+     */
     public ResponseEntity<PaymentPortalResponse> getPortalById(@PathVariable UUID portalId) {
         PaymentPortalResponse response = portalService.getPortalById(portalId);
         return ResponseEntity.ok(response);
     }
     
     @PatchMapping("/{portalId}")
+    /**
+     * Partially updates an existing payment portal.
+     *
+     * Supported fields include display name and visibility settings.
+     *
+     * @param portalId the UUID of the payment portal to update
+     * @param request the update request payload containing fields to modify
+     * @return the updated payment portal
+     * @throws ResourceNotFoundException if a portal with the given ID does not exist
+     */
     public ResponseEntity<PaymentPortalResponse> updatePortal(
             @PathVariable UUID portalId,
             @Valid @RequestBody PaymentPortalUpdateRequest request
@@ -105,4 +124,37 @@ public class PaymentPortalController {
         return ResponseEntity.ok().build();
     }
     
+    private java.util.Optional<UUID> extractUserIdFromJwt(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return java.util.Optional.empty();
+        }
+        String token = authorizationHeader.substring(7);
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) {
+            return java.util.Optional.empty();
+        }
+        try {
+            byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode payload = mapper.readTree(payloadBytes);
+            String candidate = null;
+            if (payload.hasNonNull("sub")) {
+                candidate = payload.get("sub").asText();
+            } else if (payload.hasNonNull("user_id")) {
+                candidate = payload.get("user_id").asText();
+            } else if (payload.hasNonNull("uid")) {
+                candidate = payload.get("uid").asText();
+            }
+            if (candidate == null || candidate.isBlank()) {
+                return java.util.Optional.empty();
+            }
+            try {
+                return java.util.Optional.of(UUID.fromString(candidate));
+            } catch (IllegalArgumentException e) {
+                return java.util.Optional.of(UUID.nameUUIDFromBytes(candidate.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            }
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
+    }
 }
