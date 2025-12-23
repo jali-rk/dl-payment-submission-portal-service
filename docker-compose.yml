@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: payment-portal-db
+    container_name: dopaminelite-payment-portal-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-payment_portal}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -20,7 +18,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: payment-portal-pgadmin
+    container_name: dopaminelite-payment-portal-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -30,13 +28,14 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   payment-portal:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: payment-portal-app
+    container_name: dopaminelite-payment-portal-service
     ports:
       - "8080:8080"
     volumes:

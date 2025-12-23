@@ -65,7 +65,7 @@ public class PaymentPortalController {
     @PostMapping
     public ResponseEntity<PaymentPortalResponse> createPortal(
             @Valid @RequestBody PaymentPortalCreateRequest request,
-            @RequestHeader(value = "X-Admin-Id", required = false) String adminIdHeader
+            // @RequestHeader(value = "X-Admin-Id", required = false) String adminIdHeader
     ) {
         // In production, adminId would come from authenticated user context
         // For now, accepting it from header or using a default

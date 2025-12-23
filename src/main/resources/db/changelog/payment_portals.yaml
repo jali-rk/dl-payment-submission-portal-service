@@ -26,7 +26,7 @@ databaseChangeLog:
                   name: created_by_admin_id
                   type: uuid
                   constraints:
-                    nullable: false
+                    nullable: true
               - column:
                   name: created_by
                   type: varchar(255)

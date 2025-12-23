@@ -34,7 +34,7 @@ public class PaymentPortal extends AuditableEntity {
     @Column(nullable = false)
     private PortalVisibility visibility = PortalVisibility.PUBLISHED;
     
-    @Column(nullable = false)
+    @Column(nullable = true)
     private UUID createdByAdminId;
     
 }
