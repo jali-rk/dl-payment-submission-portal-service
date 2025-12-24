@@ -36,6 +36,8 @@ spring:
 
 server:
   port: 8080
+  servlet:
+    context-path: ${SERVER_SERVLET_CONTEXTPATH:/payment-portal}
 
 management:
   endpoints:
