@@ -33,21 +33,19 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-      connection-test-query: SELECT 1
-      pool-name: HikariPool-PaymentPortal
-      auto-commit: true
-      leak-detection-threshold: 60000
+    # hikari:
+    #   maximum-pool-size: 10
+    #   minimum-idle: 5
+    #   connection-timeout: 30000
+    #   idle-timeout: 600000
+    #   max-lifetime: 1800000
+    #   connection-test-query: SELECT 1
+    #   pool-name: HikariPool-PaymentPortal
+    #   auto-commit: true
+    #   leak-detection-threshold: 60000
 
 server:
   port: 8080
-  servlet:
-    context-path: /payment-portal
 
 management:
   endpoints:
