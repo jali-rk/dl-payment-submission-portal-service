@@ -23,7 +23,7 @@ import java.util.UUID;
  * Provides endpoints for creating, retrieving, updating, and managing payment portals.
  */
 @RestController
-@RequestMapping("/api/v1/portals")
+@RequestMapping("/portals")
 @RequiredArgsConstructor
 public class PaymentPortalController {
 

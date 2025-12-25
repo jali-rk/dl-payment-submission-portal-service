@@ -55,7 +55,7 @@ class PaymentPortalIntegrationTest {
         java.util.UUID adminId = java.util.UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        String createResponse = mockMvc.perform(post("/api/v1/portals")
+        String createResponse = mockMvc.perform(post("/portals")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + token)
                 .content(objectMapper.writeValueAsString(createRequest)))
@@ -73,7 +73,7 @@ class PaymentPortalIntegrationTest {
         String portalId = objectMapper.readTree(createResponse).get("id").asText();
 
         // Retrieve portal by ID
-        mockMvc.perform(get("/api/v1/portals/" + portalId))
+        mockMvc.perform(get("/portals/" + portalId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(portalId))
                 .andExpect(jsonPath("$.name").value("Integration Test Portal"))
@@ -83,7 +83,7 @@ class PaymentPortalIntegrationTest {
 
     @Test
     void testListPortalsWithPagination() throws Exception {
-        mockMvc.perform(get("/api/v1/portals")
+        mockMvc.perform(get("/portals")
                 .param("limit", "10")
                 .param("offset", "0"))
                 .andExpect(status().isOk())
@@ -102,7 +102,7 @@ class PaymentPortalIntegrationTest {
         java.util.UUID adminId = java.util.UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Authorization", "Bearer " + token)
                 .content(objectMapper.writeValueAsString(invalidRequest)))

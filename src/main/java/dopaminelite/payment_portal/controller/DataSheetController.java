@@ -17,7 +17,7 @@ import java.util.UUID;
  * Provides endpoint for exporting submissions in various formats (CSV, XLSX, PDF).
  */
 @RestController
-@RequestMapping("/api/v1/data-sheets")
+@RequestMapping("/data-sheets")
 @RequiredArgsConstructor
 public class DataSheetController {
     

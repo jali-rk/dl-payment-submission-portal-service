@@ -21,7 +21,6 @@ import java.util.UUID;
  * Provides endpoints for creating, retrieving, and updating payment submissions.
  */
 @RestController
-@RequestMapping("/api/v1")
 @RequiredArgsConstructor
 public class PaymentSubmissionController {
     

@@ -58,23 +58,23 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals - Should return empty list when no portals exist")
+    @DisplayName("GET /portals - Should return empty list when no portals exist")
     void testListPortals_EmptyList() throws Exception {
-        mockMvc.perform(get("/api/v1/portals"))
+        mockMvc.perform(get("/portals"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(0)))
                 .andExpect(jsonPath("$.total").value(0));
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals - Should return all portals with pagination")
+    @DisplayName("GET /portals - Should return all portals with pagination")
     void testListPortals_WithPagination() throws Exception {
         // Create test data
         createTestPortal("portal-1", "Portal 1", 11, 2025, true);
         createTestPortal("portal-2", "Portal 2", 12, 2025, false);
         createTestPortal("portal-3", "Portal 3", 11, 2025, true);
 
-        mockMvc.perform(get("/api/v1/portals")
+        mockMvc.perform(get("/portals")
                         .param("limit", "2")
                         .param("offset", "0"))
                 .andExpect(status().isOk())
@@ -83,13 +83,13 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals - Should filter by month and year")
+    @DisplayName("GET /portals - Should filter by month and year")
     void testListPortals_FilterByMonthAndYear() throws Exception {
         createTestPortal("portal-nov-2025", "November 2025", 11, 2025, true);
         createTestPortal("portal-dec-2025", "December 2025", 12, 2025, true);
         createTestPortal("portal-nov-2024", "November 2024", 11, 2024, true);
 
-        mockMvc.perform(get("/api/v1/portals")
+        mockMvc.perform(get("/portals")
                         .param("month", "11")
                         .param("year", "2025"))
                 .andExpect(status().isOk())
@@ -100,12 +100,12 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals - Should filter by isPublished")
+    @DisplayName("GET /portals - Should filter by isPublished")
     void testListPortals_FilterByPublished() throws Exception {
         createTestPortal("published-portal", "Published", 11, 2025, true);
         createTestPortal("unpublished-portal", "Unpublished", 11, 2025, false);
 
-        mockMvc.perform(get("/api/v1/portals")
+        mockMvc.perform(get("/portals")
                         .param("isPublished", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(1)))
@@ -114,7 +114,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/portals - Should create portal successfully")
+    @DisplayName("POST /portals - Should create portal successfully")
     void testCreatePortal_Success() throws Exception {
         PaymentPortalCreateRequest request = new PaymentPortalCreateRequest();
         request.setMonth(11);
@@ -126,7 +126,7 @@ class PaymentPortalControllerTest {
         UUID adminId = UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
@@ -143,7 +143,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/portals - Should create published portal with correct visibility")
+    @DisplayName("POST /portals - Should create published portal with correct visibility")
     void testCreatePortal_Published() throws Exception {
         PaymentPortalCreateRequest request = new PaymentPortalCreateRequest();
         request.setMonth(12);
@@ -155,7 +155,7 @@ class PaymentPortalControllerTest {
         UUID adminId = UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
@@ -165,7 +165,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/portals - Should fail with duplicate portal name")
+    @DisplayName("POST /portals - Should fail with duplicate portal name")
     void testCreatePortal_DuplicateName() throws Exception {
         createTestPortal("duplicate-portal", "Duplicate", 11, 2025, false);
 
@@ -178,7 +178,7 @@ class PaymentPortalControllerTest {
         UUID adminId = UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
@@ -188,7 +188,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/portals - Should fail validation with missing required fields")
+    @DisplayName("POST /portals - Should fail validation with missing required fields")
     void testCreatePortal_ValidationError() throws Exception {
         PaymentPortalCreateRequest request = new PaymentPortalCreateRequest();
         // Missing required fields
@@ -196,7 +196,7 @@ class PaymentPortalControllerTest {
         UUID adminId = UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
@@ -206,7 +206,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/portals - Should fail validation with invalid month")
+    @DisplayName("POST /portals - Should fail validation with invalid month")
     void testCreatePortal_InvalidMonth() throws Exception {
         PaymentPortalCreateRequest request = new PaymentPortalCreateRequest();
         request.setMonth(13); // Invalid month
@@ -217,7 +217,7 @@ class PaymentPortalControllerTest {
         UUID adminId = UUID.randomUUID();
         String token = generateTestJwtToken(adminId);
         
-        mockMvc.perform(post("/api/v1/portals")
+        mockMvc.perform(post("/portals")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + token)
                         .content(objectMapper.writeValueAsString(request)))
@@ -226,11 +226,11 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals/{portalId} - Should return portal by ID")
+    @DisplayName("GET /portals/{portalId} - Should return portal by ID")
     void testGetPortalById_Success() throws Exception {
         PaymentPortal portal = createTestPortal("test-portal", "Test Portal", 11, 2025, true);
 
-        mockMvc.perform(get("/api/v1/portals/{portalId}", portal.getId()))
+        mockMvc.perform(get("/portals/{portalId}", portal.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(portal.getId().toString()))
                 .andExpect(jsonPath("$.name").value("test-portal"))
@@ -241,25 +241,25 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/portals/{portalId} - Should return 404 for non-existent portal")
+    @DisplayName("GET /portals/{portalId} - Should return 404 for non-existent portal")
     void testGetPortalById_NotFound() throws Exception {
         UUID nonExistentId = UUID.randomUUID();
 
-        mockMvc.perform(get("/api/v1/portals/{portalId}", nonExistentId))
+        mockMvc.perform(get("/portals/{portalId}", nonExistentId))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value(containsString(nonExistentId.toString())));
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/portals/{portalId} - Should update visibility")
+    @DisplayName("PATCH /portals/{portalId} - Should update visibility")
     void testUpdatePortal_Visibility() throws Exception {
         PaymentPortal portal = createTestPortal("test-portal", "Test", 11, 2025, true);
 
         PaymentPortalUpdateRequest request = new PaymentPortalUpdateRequest();
         request.setVisibility(PortalVisibility.HIDDEN);
 
-        mockMvc.perform(patch("/api/v1/portals/{portalId}", portal.getId())
+        mockMvc.perform(patch("/portals/{portalId}", portal.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -268,13 +268,13 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/portals/{portalId} - Should return 404 for non-existent portal")
+    @DisplayName("PATCH /portals/{portalId} - Should return 404 for non-existent portal")
     void testUpdatePortal_NotFound() throws Exception {
         UUID nonExistentId = UUID.randomUUID();
         PaymentPortalUpdateRequest request = new PaymentPortalUpdateRequest();
         request.setVisibility(PortalVisibility.HIDDEN);
 
-        mockMvc.perform(patch("/api/v1/portals/{portalId}", nonExistentId)
+        mockMvc.perform(patch("/portals/{portalId}", nonExistentId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -282,7 +282,7 @@ class PaymentPortalControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/portals/bulk-visibility - Should update multiple portals")
+    @DisplayName("PATCH /portals/bulk-visibility - Should update multiple portals")
     void testBulkUpdateVisibility_Success() throws Exception {
         PaymentPortal portal1 = createTestPortal("portal-1", "Portal 1", 11, 2025, false);
         PaymentPortal portal2 = createTestPortal("portal-2", "Portal 2", 11, 2025, false);
@@ -292,29 +292,29 @@ class PaymentPortalControllerTest {
         request.setPortalIds(Arrays.asList(portal1.getId(), portal2.getId()));
         request.setIsPublished(true);
 
-        mockMvc.perform(patch("/api/v1/portals/bulk-visibility")
+        mockMvc.perform(patch("/portals/bulk-visibility")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
 
         // Verify updates
-        mockMvc.perform(get("/api/v1/portals/{portalId}", portal1.getId()))
+        mockMvc.perform(get("/portals/{portalId}", portal1.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isPublished").value(true))
                 .andExpect(jsonPath("$.visibility").value("PUBLISHED"));
 
-        mockMvc.perform(get("/api/v1/portals/{portalId}", portal2.getId()))
+        mockMvc.perform(get("/portals/{portalId}", portal2.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isPublished").value(true));
 
         // Portal 3 should remain unchanged
-        mockMvc.perform(get("/api/v1/portals/{portalId}", portal3.getId()))
+        mockMvc.perform(get("/portals/{portalId}", portal3.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isPublished").value(false));
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/portals/bulk-visibility - Should fail with invalid portal IDs")
+    @DisplayName("PATCH /portals/bulk-visibility - Should fail with invalid portal IDs")
     void testBulkUpdateVisibility_InvalidIds() throws Exception {
         PaymentPortal portal1 = createTestPortal("portal-1", "Portal 1", 11, 2025, false);
         UUID invalidId = UUID.randomUUID();
@@ -323,20 +323,20 @@ class PaymentPortalControllerTest {
         request.setPortalIds(Arrays.asList(portal1.getId(), invalidId));
         request.setIsPublished(true);
 
-        mockMvc.perform(patch("/api/v1/portals/bulk-visibility")
+        mockMvc.perform(patch("/portals/bulk-visibility")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/portals/bulk-visibility - Should fail validation with empty list")
+    @DisplayName("PATCH /portals/bulk-visibility - Should fail validation with empty list")
     void testBulkUpdateVisibility_EmptyList() throws Exception {
         BulkPortalVisibilityUpdateRequest request = new BulkPortalVisibilityUpdateRequest();
         request.setPortalIds(List.of());
         request.setIsPublished(true);
 
-        mockMvc.perform(patch("/api/v1/portals/bulk-visibility")
+        mockMvc.perform(patch("/portals/bulk-visibility")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
