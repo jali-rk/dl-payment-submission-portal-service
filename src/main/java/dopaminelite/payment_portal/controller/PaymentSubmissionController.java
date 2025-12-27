@@ -63,11 +63,13 @@ public class PaymentSubmissionController {
             @RequestParam(required = false) SubmissionStatus status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) Integer year,
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
         PaginatedResponse<PaymentSubmissionResponse> response = submissionService.listSubmissions(
-                studentId, portalId, status, fromDate, toDate, limit, offset
+            studentId, portalId, status, fromDate, toDate, month, year, limit, offset
         );
         return ResponseEntity.ok(response);
     }

@@ -103,13 +103,52 @@ public class PaymentSubmissionService {
             SubmissionStatus status,
             LocalDate fromDate,
             LocalDate toDate,
+            Integer month,
+            Integer year,
             int limit,
             int offset
     ) {
         Pageable pageable = PageRequest.of(offset / limit, limit, Sort.by(Sort.Direction.DESC, "submittedAt"));
         
+        // Derive date range from month/year if provided
+        LocalDate effectiveFrom = fromDate;
+        LocalDate effectiveTo = toDate;
+        if (month != null || year != null) {
+            // Validate inputs
+            if (month != null && (month < 1 || month > 12)) {
+                throw new ValidationException("Month must be between 1 and 12");
+            }
+            if (month != null && year == null) {
+                throw new ValidationException("Year must be provided when month is specified");
+            }
+            // Compute month/year range only when explicit from/to not provided
+            LocalDate rangeStart;
+            LocalDate rangeEnd;
+            if (year != null && month != null) {
+                rangeStart = LocalDate.of(year, month, 1);
+                rangeEnd = rangeStart.withDayOfMonth(rangeStart.lengthOfMonth());
+            } else if (year != null) {
+                rangeStart = LocalDate.of(year, 1, 1);
+                rangeEnd = LocalDate.of(year, 12, 31);
+            } else {
+                rangeStart = null;
+                rangeEnd = null;
+            }
+            // Combine ranges by intersection when both sets exist
+            if (rangeStart != null) {
+                if (effectiveFrom == null || effectiveFrom.isBefore(rangeStart)) {
+                    effectiveFrom = rangeStart;
+                }
+            }
+            if (rangeEnd != null) {
+                if (effectiveTo == null || effectiveTo.isAfter(rangeEnd)) {
+                    effectiveTo = rangeEnd;
+                }
+            }
+        }
+        
         Page<PaymentSubmission> submissionPage = submissionRepository.findByFilters(
-                studentId, portalId, status, fromDate, toDate, pageable
+                studentId, portalId, status, effectiveFrom, effectiveTo, pageable
         );
         
         List<PaymentSubmissionResponse> items = submissionPage.getContent()
