@@ -74,17 +74,10 @@ public class DataSheetService {
             return submissionRepository.findAllById(submissionIds);
         }
         
-        // Otherwise filter by type and date range
+        // Otherwise filter by type and optionally month/year
         SubmissionStatus status = mapTypeToStatus(type);
-        LocalDate fromDate = null;
-        LocalDate toDate = null;
-        
-        if (month != null && year != null) {
-            fromDate = LocalDate.of(year, month, 1);
-            toDate = fromDate.plusMonths(1).minusDays(1);
-        }
-        
-        return submissionRepository.findByFilters(null, null, status, fromDate, toDate, Pageable.unpaged())
+
+        return submissionRepository.findByFilters(null, null, status, month, year, Pageable.unpaged())
                 .getContent();
     }
     

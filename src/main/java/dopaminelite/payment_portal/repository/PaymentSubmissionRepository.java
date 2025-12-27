@@ -49,29 +49,30 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
     Page<PaymentSubmission> findByStatus(SubmissionStatus status, Pageable pageable);
     
     /**
-     * Finds submissions with flexible filtering criteria.
+     * Finds submissions with flexible filtering criteria using JPQL.
      * All parameters are optional (can be null) for flexible querying.
      *
      * @param studentId filter by student ID, null for no filtering
      * @param portalId filter by portal ID, null for no filtering
      * @param status filter by submission status, null for no filtering
-     * @param fromDate filter submissions from this date (inclusive), null for no filtering
-     * @param toDate filter submissions until this date (inclusive), null for no filtering
+     * @param month filter by portal's month (1-12), null for no filtering
+     * @param year filter by portal's year, null for no filtering
      * @param pageable pagination information
      * @return a page of submissions matching the criteria
      */
-    @Query("SELECT s FROM PaymentSubmission s WHERE " +
-           "(:studentId IS NULL OR s.studentId = :studentId) AND " +
-           "(:portalId IS NULL OR s.portal.id = :portalId) AND " +
-           "(:status IS NULL OR s.status = :status) AND " +
-           "(:fromDate IS NULL OR CAST(s.submittedAt AS LocalDate) >= :fromDate) AND " +
-           "(:toDate IS NULL OR CAST(s.submittedAt AS LocalDate) <= :toDate)")
+    @Query("SELECT p FROM PaymentSubmission p WHERE " +
+           "(:studentId IS NULL OR p.studentId = :studentId) AND " +
+           "(:portalId IS NULL OR p.portal.id = :portalId) AND " +
+           "(:status IS NULL OR p.status = :status) AND " +
+           "(:month IS NULL OR p.portal.month = :month) AND " +
+           "(:year IS NULL OR p.portal.year = :year) " +
+           "ORDER BY p.submittedAt DESC")
     Page<PaymentSubmission> findByFilters(
             @Param("studentId") UUID studentId,
             @Param("portalId") UUID portalId,
             @Param("status") SubmissionStatus status,
-            @Param("fromDate") LocalDate fromDate,
-            @Param("toDate") LocalDate toDate,
+            @Param("month") Integer month,
+            @Param("year") Integer year,
             Pageable pageable
     );
     

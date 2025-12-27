@@ -8,6 +8,7 @@ import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.service.PaymentSubmissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,7 @@ import java.util.UUID;
  * REST controller for managing payment submissions.
  * Provides endpoints for creating, retrieving, and updating payment submissions.
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class PaymentSubmissionController {
@@ -68,9 +70,15 @@ public class PaymentSubmissionController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
+        log.info("[CONTROLLER] Received GET /submissions request - studentId: {}, portalId: {}, status: {}, fromDate: {}, toDate: {}, month: {}, year: {}, limit: {}, offset: {}",
+                studentId, portalId, status, fromDate, toDate, month, year, limit, offset);
+        
         PaginatedResponse<PaymentSubmissionResponse> response = submissionService.listSubmissions(
             studentId, portalId, status, fromDate, toDate, month, year, limit, offset
         );
+        
+        log.info("[CONTROLLER] Successfully retrieved submissions - total count: {}, returned items: {}",
+                response.getTotal(), response.getItems().size());
         return ResponseEntity.ok(response);
     }
     

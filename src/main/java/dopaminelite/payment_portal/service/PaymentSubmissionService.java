@@ -14,7 +14,9 @@ import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaymentSubmissionMapper;
 import dopaminelite.payment_portal.repository.PaymentPortalRepository;
 import dopaminelite.payment_portal.repository.PaymentSubmissionRepository;
+import dopaminelite.payment_portal.repository.PaymentSubmissionRepositoryLoggingUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
  * Service for managing payment submission business logic.
  * Handles submission creation, retrieval, status updates, and validation.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -108,54 +111,39 @@ public class PaymentSubmissionService {
             int limit,
             int offset
     ) {
-        Pageable pageable = PageRequest.of(offset / limit, limit, Sort.by(Sort.Direction.DESC, "submittedAt"));
+        log.debug("[SERVICE] listSubmissions called with - studentId: {}, portalId: {}, status: {}, fromDate: {}, toDate: {}, month: {}, year: {}, limit: {}, offset: {}",
+                studentId, portalId, status, fromDate, toDate, month, year, limit, offset);
         
-        // Derive date range from month/year if provided
-        LocalDate effectiveFrom = fromDate;
-        LocalDate effectiveTo = toDate;
-        if (month != null || year != null) {
-            // Validate inputs
-            if (month != null && (month < 1 || month > 12)) {
-                throw new ValidationException("Month must be between 1 and 12");
-            }
-            if (month != null && year == null) {
-                throw new ValidationException("Year must be provided when month is specified");
-            }
-            // Compute month/year range only when explicit from/to not provided
-            LocalDate rangeStart;
-            LocalDate rangeEnd;
-            if (year != null && month != null) {
-                rangeStart = LocalDate.of(year, month, 1);
-                rangeEnd = rangeStart.withDayOfMonth(rangeStart.lengthOfMonth());
-            } else if (year != null) {
-                rangeStart = LocalDate.of(year, 1, 1);
-                rangeEnd = LocalDate.of(year, 12, 31);
-            } else {
-                rangeStart = null;
-                rangeEnd = null;
-            }
-            // Combine ranges by intersection when both sets exist
-            if (rangeStart != null) {
-                if (effectiveFrom == null || effectiveFrom.isBefore(rangeStart)) {
-                    effectiveFrom = rangeStart;
-                }
-            }
-            if (rangeEnd != null) {
-                if (effectiveTo == null || effectiveTo.isAfter(rangeEnd)) {
-                    effectiveTo = rangeEnd;
-                }
-            }
+        // Validate month/year inputs
+        if (month != null && (month < 1 || month > 12)) {
+            log.warn("[SERVICE] Invalid month value: {}", month);
+            throw new ValidationException("Month must be between 1 and 12");
         }
-        
+        if (month != null && year == null) {
+            log.warn("[SERVICE] Month provided without year");
+            throw new ValidationException("Year must be provided when month is specified");
+        }
+
+        // JPQL query has ORDER BY, so we don't need Sort in Pageable
+        Pageable pageable = PageRequest.of(offset / limit, limit);
+        log.debug("[SERVICE] Pageable created - page: {}, size: {}", offset / limit, limit);
+
+        log.info("[SERVICE] Calling repository.findByFilters - studentId: {}, portalId: {}, status: {}, month: {}, year: {}",
+                studentId, portalId, status, month, year);
+
         Page<PaymentSubmission> submissionPage = submissionRepository.findByFilters(
-                studentId, portalId, status, effectiveFrom, effectiveTo, pageable
+                studentId, portalId, status, month, year, pageable
         );
+        
+        log.info("[SERVICE] Repository query executed - total elements: {}, current page size: {}, total pages: {}",
+                submissionPage.getTotalElements(), submissionPage.getContent().size(), submissionPage.getTotalPages());
         
         List<PaymentSubmissionResponse> items = submissionPage.getContent()
                 .stream()
                 .map(submissionMapper::toResponse)
                 .toList();
         
+        log.info("[SERVICE] Mapped submissions to response DTOs - count: {}", items.size());
         return new PaginatedResponse<>(items, submissionPage.getTotalElements());
     }
     
