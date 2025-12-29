@@ -50,7 +50,40 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 7. Build and push Docker image to ECR
+      # 7. Validate required environment configuration
+      - name: Validate environment variables
+        env:
+          # Set these per GitHub Environment (dev/prod) so repos/clusters stay isolated.
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+        run: |
+          set -euo pipefail
+
+          required=(AWS_ACCOUNT_ID AWS_REGION ECR_REPOSITORY ECS_CLUSTER ECS_SERVICE)
+          for k in "${required[@]}"; do
+            if [ -z "${!k:-}" ]; then
+              echo "Missing required GitHub Environment var: ${k}" >&2
+              exit 1
+            fi
+          done
+
+          # Guardrails: avoid whitespace causing a different repo name.
+          for k in AWS_ACCOUNT_ID AWS_REGION ECR_REPOSITORY ECS_CLUSTER ECS_SERVICE; do
+            v=$(echo "${!k}" | tr -d '\r\n' | xargs)
+            if [ -z "${v}" ]; then
+              echo "GitHub Environment var ${k} is empty after trimming" >&2
+              exit 1
+            fi
+          done
+
+          echo "Using environment: ${{ github.ref_name }}"
+          echo "ECR repo: ${ECR_REPOSITORY}"
+          echo "ECS cluster/service: ${ECS_CLUSTER}/${ECS_SERVICE}"
+
+      # 8. Build and push Docker image to ECR (tagged ':latest')
       - name: Build & push Docker image
         env:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
@@ -62,16 +95,17 @@ jobs:
           ECR_REPO=$(echo "${ECR_REPOSITORY}" | tr -d '\r\n' | xargs)
           AWS_ACCOUNT=$(echo "${AWS_ACCOUNT_ID}" | tr -d '\r\n' | xargs)
           AWS_REG=$(echo "${AWS_REGION}" | tr -d '\r\n' | xargs)
+
           IMAGE_URI="${AWS_ACCOUNT}.dkr.ecr.${AWS_REG}.amazonaws.com/${ECR_REPO}:latest"
 
-          echo "Building image: ${ECR_REPO}:latest"
-          echo "Target URI: ${IMAGE_URI}"
+          echo "Building local image tag: ${ECR_REPO}:latest"
+          echo "Pushing to: ${IMAGE_URI}"
 
           docker build -t "${ECR_REPO}:latest" .
           docker tag "${ECR_REPO}:latest" "${IMAGE_URI}"
           docker push "${IMAGE_URI}"
 
-      # 8. Force ECS service redeploy so it pulls the new image
+      # 9. Force ECS service redeploy so the task pulls the newest ':latest'
       - name: Force ECS service redeploy
         env:
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
