@@ -4,16 +4,19 @@ on:
   push:
     branches:
       - dev
-      - prod
+      - main
 
 jobs:
   deploy:
     name: Deploy (${{ github.ref_name }})
     runs-on: ubuntu-latest
 
+    # Safety guard: this workflow should only deploy from dev or main.
+    if: ${{ github.ref_name == 'dev' || github.ref_name == 'main' }}
+
     # Map branch -> GitHub Environment. Create Environments named: dev, prod
     environment:
-      name: ${{ github.ref_name }}
+      name: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
 
     permissions:
       contents: read
@@ -59,6 +62,7 @@ jobs:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
         run: |
           set -euo pipefail
 
@@ -79,7 +83,8 @@ jobs:
             fi
           done
 
-          echo "Using environment: ${{ github.ref_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Using GitHub Environment: ${DEPLOY_ENV}"
           echo "ECR repo: ${ECR_REPOSITORY}"
           echo "ECS cluster/service: ${ECS_CLUSTER}/${ECS_SERVICE}"
 
