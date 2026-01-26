@@ -102,8 +102,8 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
            "(:year IS NULL OR p.portal.year = :year) AND " +
            "(:studyMedium IS NULL OR p.studentSnapshot.studyMedium = :studyMedium) AND " +
            "(:paperCenterId IS NULL OR p.studentSnapshot.paperCenterId = :paperCenterId) AND " +
-           "(:fromDate IS NULL OR p.submittedAt >= :fromDate) AND " +
-           "(:toDate IS NULL OR p.submittedAt <= :toDate) " +
+           "(p.submittedAt >= COALESCE(:fromDate, p.submittedAt)) AND " +
+           "(p.submittedAt <= COALESCE(:toDate, p.submittedAt)) " +
            "ORDER BY p.submittedAt DESC")
     Page<PaymentSubmission> findByAdminFilters(
             @Param("studentId") UUID studentId,
