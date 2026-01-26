@@ -94,7 +94,9 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
      * @param pageable pagination information
      * @return a page of submissions matching the criteria
      */
-    @Query("SELECT p FROM PaymentSubmission p WHERE " +
+    @Query("SELECT DISTINCT p FROM PaymentSubmission p " +
+           "LEFT JOIN FETCH p.portal " +
+           "WHERE " +
            "(:studentId IS NULL OR p.studentId = :studentId) AND " +
            "(:portalId IS NULL OR p.portal.id = :portalId) AND " +
            "(:status IS NULL OR p.status = :status) AND " +
