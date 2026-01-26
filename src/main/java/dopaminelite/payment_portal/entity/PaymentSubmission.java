@@ -58,6 +58,13 @@ public class PaymentSubmission extends BaseEntity {
      */
     @Column(nullable = false)
     private String portalNameAtSubmission;
+
+    /**
+     * Embedded snapshot of student information at the time of submission.
+     * Used for filtering, reporting, and audit purposes.
+     */
+    @Embedded
+    private StudentSnapshot studentSnapshot;
     
     /**
      * Timestamp when the submission was first created. Set automatically on persist.

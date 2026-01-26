@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-add-student-snapshot-fields
+      author: copilot
+      changes:
+        - addColumn:
+            tableName: payment_submissions
+            columns:
+              - column:
+                  name: student_code_number
+                  type: varchar(50)
+              - column:
+                  name: student_full_name
+                  type: varchar(255)
+              - column:
+                  name: student_email
+                  type: varchar(255)
+              - column:
+                  name: student_whatsapp_number
+                  type: varchar(20)
+              - column:
+                  name: student_secondary_phone_number
+                  type: varchar(20)
+              - column:
+                  name: student_address
+                  type: varchar(500)
+              - column:
+                  name: student_nic
+                  type: varchar(20)
+              - column:
+                  name: student_school
+                  type: varchar(255)
+              - column:
+                  name: student_paper_writing_mode
+                  type: varchar(20)
+              - column:
+                  name: student_paper_center_id
+                  type: varchar(100)
+              - column:
+                  name: student_study_medium
+                  type: varchar(20)
+        - createIndex:
+            tableName: payment_submissions
+            indexName: idx_payment_submissions_study_medium
+            columns:
+              - column:
+                  name: student_study_medium
+        - createIndex:
+            tableName: payment_submissions
+            indexName: idx_payment_submissions_paper_center_id
+            columns:
+              - column:
+                  name: student_paper_center_id
+        - createIndex:
+            tableName: payment_submissions
+            indexName: idx_payment_submissions_submitted_at
+            columns:
+              - column:
+                  name: submitted_at

@@ -31,7 +31,14 @@ public class PaymentSubmissionCreateRequest {
      */
     @NotBlank(message = "Portal name confirmation is required")
     private String portalNameConfirmation;
-    
+
+    /**
+     * Snapshot of student information at the time of submission.
+     */
+    @NotNull(message = "Student snapshot is required")
+    @Valid
+    private StudentSnapshotDto studentSnapshot;
+
     /**
      * List of uploaded files. At least one file is required.
      */
