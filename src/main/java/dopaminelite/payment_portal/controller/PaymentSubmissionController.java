@@ -4,6 +4,7 @@ import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionCreateRequest;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionResponse;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionStatusUpdateRequest;
+import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.service.PaymentSubmissionService;
 import jakarta.validation.Valid;
@@ -15,6 +16,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 /**
@@ -52,8 +56,12 @@ public class PaymentSubmissionController {
      * @param studentId filter by student ID, optional
      * @param portalId filter by portal ID, optional
      * @param status filter by submission status (PENDING, APPROVED, REJECTED), optional
-     * @param fromDate filter submissions from this date (inclusive), optional
-     * @param toDate filter submissions until this date (inclusive), optional
+     * @param month filter by portal's month (1-12), optional
+     * @param year filter by portal's year, optional
+     * @param studyMedium filter by student's study medium, optional
+     * @param paperCenter filter by paper center ID, optional
+     * @param submittedAtFrom filter submissions from this datetime (inclusive), optional
+     * @param submittedAtTo filter submissions until this datetime (inclusive), optional
      * @param limit maximum number of results per page, defaults to 10
      * @param offset number of results to skip, defaults to 0
      * @return paginated list of payment submissions
@@ -63,20 +71,34 @@ public class PaymentSubmissionController {
             @RequestParam(required = false) UUID studentId,
             @RequestParam(required = false) UUID portalId,
             @RequestParam(required = false) SubmissionStatus status,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) Integer month,
             @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) StudyMedium studyMedium,
+            @RequestParam(required = false) String paperCenter,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtTo,
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        log.info("[CONTROLLER] Received GET /submissions request - studentId: {}, portalId: {}, status: {}, fromDate: {}, toDate: {}, month: {}, year: {}, limit: {}, offset: {}",
-                studentId, portalId, status, fromDate, toDate, month, year, limit, offset);
-        
+        log.info("[CONTROLLER] Received GET /submissions request - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenter: {}, submittedAtFrom: {}, submittedAtTo: {}, limit: {}, offset: {}",
+                studentId, portalId, status, month, year, studyMedium, paperCenter, submittedAtFrom, submittedAtTo, limit, offset);
+
+        // Convert OffsetDateTime to LocalDateTime using Asia/Colombo timezone
+        ZoneId sriLankaZone = ZoneId.of("Asia/Colombo");
+        LocalDateTime fromDate = null;
+        if (submittedAtFrom != null) {
+            fromDate = submittedAtFrom.atZoneSameInstant(sriLankaZone).toLocalDateTime();
+        }
+
+        LocalDateTime toDate = null;
+        if (submittedAtTo != null) {
+            toDate = submittedAtTo.atZoneSameInstant(sriLankaZone).toLocalDateTime();
+        }
+
         PaginatedResponse<PaymentSubmissionResponse> response = submissionService.listSubmissions(
-            studentId, portalId, status, fromDate, toDate, month, year, limit, offset
+            studentId, portalId, status, month, year, studyMedium, paperCenter, fromDate, toDate, limit, offset
         );
-        
+
         log.info("[CONTROLLER] Successfully retrieved submissions - total count: {}, returned items: {}",
                 response.getTotal(), response.getItems().size());
         return ResponseEntity.ok(response);

@@ -52,7 +52,12 @@ public class PaymentSubmissionResponse {
      * Snapshot of the portal name at submission time.
      */
     private String portalNameAtSubmission;
-    
+
+    /**
+     * Student information snapshot at the time of submission.
+     */
+    private StudentSnapshotDto student;
+
     /**
      * Timestamp when the submission was created.
      */

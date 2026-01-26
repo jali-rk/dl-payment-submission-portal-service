@@ -1,8 +1,10 @@
 package dopaminelite.payment_portal.mapper;
 
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionResponse;
+import dopaminelite.payment_portal.dto.submission.StudentSnapshotDto;
 import dopaminelite.payment_portal.dto.submission.UploadedFileRefDto;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
+import dopaminelite.payment_portal.entity.StudentSnapshot;
 import dopaminelite.payment_portal.entity.UploadedFile;
 import org.springframework.stereotype.Component;
 
@@ -32,9 +34,10 @@ public class PaymentSubmissionMapper {
         response.setStatus(submission.getStatus());
         response.setRejectionReason(submission.getRejectionReason());
         response.setPortalNameAtSubmission(submission.getPortalNameAtSubmission());
+        response.setStudent(toStudentSnapshotDto(submission.getStudentSnapshot()));
         response.setSubmittedAt(submission.getSubmittedAt());
         response.setLastUpdatedAt(submission.getLastUpdatedAt());
-        
+
         if (submission.getUploadedFiles() != null) {
             response.setUploadedFiles(
                 submission.getUploadedFiles().stream()
@@ -59,5 +62,57 @@ public class PaymentSubmissionMapper {
         dto.setFileType(file.getFileType());
         return dto;
     }
-    
+
+    /**
+     * Converts a StudentSnapshot entity to a StudentSnapshotDto.
+     *
+     * @param snapshot the entity to convert, can be null
+     * @return the DTO, or null if the input is null
+     */
+    public StudentSnapshotDto toStudentSnapshotDto(StudentSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+
+        StudentSnapshotDto dto = new StudentSnapshotDto();
+        dto.setCodeNumber(snapshot.getCodeNumber());
+        dto.setFullName(snapshot.getFullName());
+        dto.setEmail(snapshot.getEmail());
+        dto.setWhatsappNumber(snapshot.getWhatsappNumber());
+        dto.setSecondaryPhoneNumber(snapshot.getSecondaryPhoneNumber());
+        dto.setAddress(snapshot.getAddress());
+        dto.setNic(snapshot.getNic());
+        dto.setSchool(snapshot.getSchool());
+        dto.setPaperWritingMode(snapshot.getPaperWritingMode());
+        dto.setPaperCenterId(snapshot.getPaperCenterId());
+        dto.setStudyMedium(snapshot.getStudyMedium());
+        return dto;
+    }
+
+    /**
+     * Converts a StudentSnapshotDto to a StudentSnapshot entity.
+     *
+     * @param dto the DTO to convert, can be null
+     * @return the entity, or null if the input is null
+     */
+    public StudentSnapshot toStudentSnapshotEntity(StudentSnapshotDto dto) {
+        if (dto == null) {
+            return null;
+        }
+
+        StudentSnapshot snapshot = new StudentSnapshot();
+        snapshot.setCodeNumber(dto.getCodeNumber());
+        snapshot.setFullName(dto.getFullName());
+        snapshot.setEmail(dto.getEmail());
+        snapshot.setWhatsappNumber(dto.getWhatsappNumber());
+        snapshot.setSecondaryPhoneNumber(dto.getSecondaryPhoneNumber());
+        snapshot.setAddress(dto.getAddress());
+        snapshot.setNic(dto.getNic());
+        snapshot.setSchool(dto.getSchool());
+        snapshot.setPaperWritingMode(dto.getPaperWritingMode());
+        snapshot.setPaperCenterId(dto.getPaperCenterId());
+        snapshot.setStudyMedium(dto.getStudyMedium());
+        return snapshot;
+    }
+
 }

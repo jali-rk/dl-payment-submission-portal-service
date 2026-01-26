@@ -36,8 +36,12 @@ spring:
 
 server:
   port: 8080
-  servlet:                                                                                        
+  servlet:
       context-path: /payment-portal
+
+# BFF Integration Configuration
+bff:
+  base-url: ${VITE_API_BASE_URL:http://localhost:3000}
 
 management:
   endpoints:

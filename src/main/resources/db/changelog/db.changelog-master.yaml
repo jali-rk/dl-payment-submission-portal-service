@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/payment_submissions.yaml
   - include:
       file: db/changelog/uploaded_files.yaml
+  - include:
+      file: db/changelog/004-add-student-snapshot.yaml
