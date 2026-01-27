@@ -40,6 +40,7 @@ server:
       context-path: /payment-portal
 
 # BFF Integration Configuration
+# FIXME: Bad design - should use BFF_BASE_URL with internal ALB DNS instead of VITE_API_BASE_URL
 bff:
   base-url: ${VITE_API_BASE_URL:http://localhost:3000}
 
