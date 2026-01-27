@@ -26,7 +26,7 @@ import java.util.UUID;
  */
 @Slf4j
 @RestController
-@RequestMapping("/admin/payment/submissions")
+@RequestMapping("/submissions")
 @RequiredArgsConstructor
 public class AdminPaymentSubmissionExportController {
 
