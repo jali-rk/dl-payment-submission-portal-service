@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.mapper;
 
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionResponse;
+import dopaminelite.payment_portal.dto.submission.PortalRefDto;
 import dopaminelite.payment_portal.dto.submission.StudentSnapshotDto;
 import dopaminelite.payment_portal.dto.submission.UploadedFileRefDto;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
@@ -34,7 +35,7 @@ public class PaymentSubmissionMapper {
         response.setStatus(submission.getStatus());
         response.setRejectionReason(submission.getRejectionReason());
         response.setPortalNameAtSubmission(submission.getPortalNameAtSubmission());
-        response.setDisplayName(submission.getPortal().getDisplayName());
+        response.setPortal(new PortalRefDto(submission.getPortal().getId(), submission.getPortal().getDisplayName()));
         response.setStudent(toStudentSnapshotDto(submission.getStudentSnapshot()));
         response.setSubmittedAt(submission.getSubmittedAt());
         response.setLastUpdatedAt(submission.getLastUpdatedAt());

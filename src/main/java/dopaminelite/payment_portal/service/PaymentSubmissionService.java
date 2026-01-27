@@ -128,10 +128,6 @@ public class PaymentSubmissionService {
             log.warn("[SERVICE] Invalid month value: {}", month);
             throw new ValidationException("Month must be between 1 and 12");
         }
-        if (month != null && year == null) {
-            log.warn("[SERVICE] Month provided without year");
-            throw new ValidationException("Year must be provided when month is specified");
-        }
 
         // JPQL query has ORDER BY, so we don't need Sort in Pageable
         Pageable pageable = PageRequest.of(offset / limit, limit);

@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -80,13 +81,15 @@ public class PaymentSubmission extends BaseEntity {
     
     @PrePersist
     protected void onCreate() {
-        submittedAt = LocalDateTime.now();
-        lastUpdatedAt = LocalDateTime.now();
+        ZoneId sriLankaZone = ZoneId.of("Asia/Colombo");
+        submittedAt = LocalDateTime.now(sriLankaZone);
+        lastUpdatedAt = LocalDateTime.now(sriLankaZone);
     }
-    
+
     @PreUpdate
     protected void onUpdate() {
-        lastUpdatedAt = LocalDateTime.now();
+        ZoneId sriLankaZone = ZoneId.of("Asia/Colombo");
+        lastUpdatedAt = LocalDateTime.now(sriLankaZone);
     }
     
 }
