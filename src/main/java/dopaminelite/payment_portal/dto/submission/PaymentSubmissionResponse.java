@@ -54,6 +54,11 @@ public class PaymentSubmissionResponse {
     private String portalNameAtSubmission;
 
     /**
+     * Display name of the portal.
+     */
+    private String displayName;
+
+    /**
      * Student information snapshot at the time of submission.
      */
     private StudentSnapshotDto student;

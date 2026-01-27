@@ -34,6 +34,7 @@ public class PaymentSubmissionMapper {
         response.setStatus(submission.getStatus());
         response.setRejectionReason(submission.getRejectionReason());
         response.setPortalNameAtSubmission(submission.getPortalNameAtSubmission());
+        response.setDisplayName(submission.getPortal().getDisplayName());
         response.setStudent(toStudentSnapshotDto(submission.getStudentSnapshot()));
         response.setSubmittedAt(submission.getSubmittedAt());
         response.setLastUpdatedAt(submission.getLastUpdatedAt());
