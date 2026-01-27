@@ -150,9 +150,10 @@ public class AdminExportService {
                 }
                 yield null;
             }
-            case "Portal Name" -> submission.getPortalNameAtSubmission();
+            case "Portal", "Portal Name" -> submission.getPortalNameAtSubmission();
             case "Status" -> submission.getStatus() != null ? submission.getStatus().name() : null;
             case "Submitted At" -> submission.getSubmittedAt() != null ? submission.getSubmittedAt().format(DATE_FORMATTER) : null;
+            case "Last Updated" -> submission.getLastUpdatedAt() != null ? submission.getLastUpdatedAt().format(DATE_FORMATTER) : null;
             case "Rejection Reason" -> submission.getRejectionReason();
             default -> {
                 log.warn("Unknown column name: {}", columnName);
