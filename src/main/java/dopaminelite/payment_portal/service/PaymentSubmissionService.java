@@ -61,15 +61,15 @@ public class PaymentSubmissionService {
                 .orElseThrow(() -> ResourceNotFoundException.portalNotFound(portalId));
         
         // Validate portal name confirmation
-        if (!portal.getName().equals(request.getPortalNameConfirmation())) {
-            throw ValidationException.portalNameMismatch(portal.getName(), request.getPortalNameConfirmation());
+        if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
+            throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
         }
         
         PaymentSubmission submission = new PaymentSubmission();
         submission.setStudentId(request.getStudentId());
         submission.setPortal(portal);
         submission.setStatus(SubmissionStatus.PENDING);
-        submission.setPortalNameAtSubmission(portal.getName());
+        submission.setPortalNameAtSubmission(portal.getDisplayName());
         submission.setStudentSnapshot(submissionMapper.toStudentSnapshotEntity(request.getStudentSnapshot()));
 
         // Create uploaded file entities
