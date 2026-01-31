@@ -5,6 +5,11 @@ package dopaminelite.payment_portal.entity.enums;
  */
 public enum PaperWritingMode {
     /**
+     * Student is not currently writing papers.
+     */
+    NOT_WRITING,
+
+    /**
      * Student writes papers physically at a paper center.
      */
     PHYSICAL,
