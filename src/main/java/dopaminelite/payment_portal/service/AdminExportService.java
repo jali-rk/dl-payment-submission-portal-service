@@ -146,7 +146,10 @@ public class AdminExportService {
             case "Paper Center" -> {
                 if (submission.getStudentSnapshot() != null && submission.getStudentSnapshot().getPaperCenterId() != null) {
                     String centerId = submission.getStudentSnapshot().getPaperCenterId();
-                    yield paperCenterNameMap.getOrDefault(centerId, "");
+                    // First try to resolve via the BFF name map (ID → name).
+                    // If not found, the stored value is already a name (legacy dirty data), so use it as-is.
+                    String resolvedName = paperCenterNameMap.get(centerId);
+                    yield resolvedName != null ? resolvedName : centerId;
                 }
                 yield null;
             }
