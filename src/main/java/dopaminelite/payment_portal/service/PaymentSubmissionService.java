@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -44,6 +45,7 @@ public class PaymentSubmissionService {
     private final PaymentSubmissionRepository submissionRepository;
     private final PaymentPortalRepository portalRepository;
     private final PaymentSubmissionMapper submissionMapper;
+    private final PaperCenterService paperCenterService;
     
     /**
      * Creates a new payment submission for a specific portal.
@@ -133,11 +135,22 @@ public class PaymentSubmissionService {
         Pageable pageable = PageRequest.of(offset / limit, limit);
         log.debug("[SERVICE] Pageable created - page: {}, size: {}", offset / limit, limit);
 
-        log.info("[SERVICE] Calling repository.findByAdminFilters - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenterId: {}, fromDate: {}, toDate: {}",
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, fromDate, toDate);
+        // WORKAROUND: Some legacy rows have the paper center name stored in the ID column instead of the
+        // actual UUID (upstream bug in BFF/User Service). This is not ideal as it adds an extra BFF call per
+        // request, but there is no alternative at the given time since the existing data cannot be corrected.
+        // TODO: Remove once upstream ensures paperCenterId always contains a valid UUID.
+        String paperCenterName = null;
+        if (paperCenterId != null) {
+            Map<String, String> paperCenterNameMap = paperCenterService.getPaperCenterNameMap();
+            paperCenterName = paperCenterNameMap.get(paperCenterId);
+            log.debug("[SERVICE] Resolved paperCenterId '{}' to name '{}'", paperCenterId, paperCenterName);
+        }
+
+        log.info("[SERVICE] Calling repository.findByAdminFilters - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenterId: {}, paperCenterName: {}, fromDate: {}, toDate: {}",
+                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate);
 
         Page<PaymentSubmission> submissionPage = submissionRepository.findByAdminFilters(
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, fromDate, toDate, pageable
+                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate, pageable
         );
         
         log.info("[SERVICE] Repository query executed - total elements: {}, current page size: {}, total pages: {}",
