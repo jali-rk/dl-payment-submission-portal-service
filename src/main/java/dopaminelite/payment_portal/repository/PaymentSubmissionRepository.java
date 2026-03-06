@@ -89,6 +89,9 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
      * @param year filter by portal's year, null for no filtering
      * @param studyMedium filter by student's study medium, null for no filtering
      * @param paperCenterId filter by paper center ID, null for no filtering
+     * @param paperCenterName filter by paper center name — WORKAROUND for legacy data where the upstream
+     *        BFF/User Service stored the name instead of the UUID. Not ideal but no alternative at the
+     *        given time. TODO: Remove once upstream data is corrected.
      * @param fromDate filter submissions from this date (inclusive), null for no filtering
      * @param toDate filter submissions until this date (inclusive), null for no filtering
      * @param pageable pagination information
@@ -103,7 +106,7 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
            "(:month IS NULL OR p.portal.month = :month) AND " +
            "(:year IS NULL OR p.portal.year = :year) AND " +
            "(:studyMedium IS NULL OR p.studentSnapshot.studyMedium = :studyMedium) AND " +
-           "(:paperCenterId IS NULL OR p.studentSnapshot.paperCenterId = :paperCenterId) AND " +
+           "(:paperCenterId IS NULL OR p.studentSnapshot.paperCenterId = :paperCenterId OR p.studentSnapshot.paperCenterId = :paperCenterName) AND " +
            "(p.submittedAt >= COALESCE(:fromDate, p.submittedAt)) AND " +
            "(p.submittedAt <= COALESCE(:toDate, p.submittedAt)) " +
            "ORDER BY p.submittedAt DESC")
@@ -115,6 +118,7 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
             @Param("year") Integer year,
             @Param("studyMedium") StudyMedium studyMedium,
             @Param("paperCenterId") String paperCenterId,
+            @Param("paperCenterName") String paperCenterName,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             Pageable pageable
