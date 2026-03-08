@@ -77,7 +77,7 @@ public class AdminExportService {
         }
 
         // Fetch all matching submissions (up to a reasonable limit)
-        Pageable pageable = PageRequest.of(0, 1000); // Limit to 1000 records for safety
+        Pageable pageable = PageRequest.of(0, 10000); // Limit to 10000 records for safety
         Page<PaymentSubmission> submissionPage = submissionRepository.findByAdminFilters(
                 studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate, pageable
         );
