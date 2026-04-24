@@ -99,9 +99,10 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
      */
     @Query("SELECT DISTINCT p FROM PaymentSubmission p " +
            "LEFT JOIN FETCH p.portal " +
+           "LEFT JOIN FETCH p.studyPack " +
            "WHERE " +
            "(:studentId IS NULL OR p.studentId = :studentId) AND " +
-           "(:portalId IS NULL OR p.portal.id = :portalId) AND " +
+           "(:portalId IS NULL OR p.portal.id = :portalId OR p.studyPack.id = :portalId) AND " +
            "(:status IS NULL OR p.status = :status) AND " +
            "(:month IS NULL OR p.portal.month = :month) AND " +
            "(:year IS NULL OR p.portal.year = :year) AND " +

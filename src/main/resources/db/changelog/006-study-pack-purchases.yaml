@@ -1,0 +1,97 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-study-pack-purchases
+      author: developer
+      changes:
+        - createTable:
+            tableName: study_pack_purchases
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: student_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: study_pack_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_purchase_study_pack
+                    references: study_packs(id)
+              - column:
+                  name: amount
+                  type: decimal(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: currency
+                  type: varchar(3)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: purchase_status
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_gateway
+                  type: varchar(50)
+              - column:
+                  name: payment_session_id
+                  type: varchar(255)
+              - column:
+                  name: transaction_id
+                  type: varchar(255)
+              - column:
+                  name: enrollment_completed
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: false
+              - column:
+                  name: enrollment_error
+                  type: text
+
+        - createIndex:
+            tableName: study_pack_purchases
+            indexName: idx_purchase_student_id
+            columns:
+              - column:
+                  name: student_id
+
+        - createIndex:
+            tableName: study_pack_purchases
+            indexName: idx_purchase_session_id
+            unique: true
+            columns:
+              - column:
+                  name: payment_session_id
+
+        - createIndex:
+            tableName: study_pack_purchases
+            indexName: idx_purchase_status
+            columns:
+              - column:
+                  name: purchase_status

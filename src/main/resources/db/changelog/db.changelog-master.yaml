@@ -7,3 +7,13 @@ databaseChangeLog:
       file: db/changelog/uploaded_files.yaml
   - include:
       file: db/changelog/004-add-student-snapshot.yaml
+  - include:
+      file: db/changelog/005-study-packs.yaml
+  - include:
+      file: db/changelog/006-study-pack-purchases.yaml
+  - include:
+      file: db/changelog/007-add-submission-type.yaml
+  - include:
+      file: db/changelog/008-drop-portal-id-not-null.yaml
+  - include:
+      file: db/changelog/009-add-study-pack-thumbnail.yaml

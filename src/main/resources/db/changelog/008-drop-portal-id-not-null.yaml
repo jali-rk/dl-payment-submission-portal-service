@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-drop-portal-id-not-null
+      author: system
+      changes:
+        - dropNotNullConstraint:
+            tableName: payment_submissions
+            columnName: portal_id
+            columnDataType: uuid

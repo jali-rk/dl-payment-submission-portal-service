@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-add-study-pack-thumbnail
+      author: developer
+      changes:
+        - addColumn:
+            tableName: study_packs
+            columns:
+              - column:
+                  name: thumbnail_url
+                  type: varchar(500)
+                  remarks: "URL to the study pack thumbnail image"

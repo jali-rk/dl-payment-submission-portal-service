@@ -73,4 +73,14 @@ public class PaymentSubmissionResponse {
      */
     private LocalDateTime lastUpdatedAt;
     
+    /**
+     * Type of submission: "PORTAL" or "STUDY_PACK".
+     */
+    private String submissionType;
+    
+    /**
+     * Study pack ID if this is a study pack submission.
+     */
+    private UUID studyPackId;
+    
 }

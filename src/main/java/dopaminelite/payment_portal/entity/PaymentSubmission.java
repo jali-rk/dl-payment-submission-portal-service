@@ -30,10 +30,26 @@ public class PaymentSubmission extends BaseEntity {
     
     /**
      * Reference to the payment portal this submission belongs to.
+     * For study pack submissions, this may be null.
      */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "portal_id", nullable = false)
+    @JoinColumn(name = "portal_id")
     private PaymentPortal portal;
+    
+    /**
+     * Type of submission: PORTAL (regular class) or STUDY_PACK.
+     * Defaults to PORTAL for backward compatibility.
+     */
+    @Column(name = "submission_type", nullable = false, length = 20)
+    private String submissionType = "PORTAL";
+    
+    /**
+     * Reference to the study pack if this is a study pack submission.
+     * Null for regular portal submissions.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "study_pack_id")
+    private StudyPack studyPack;
     
     /**
      * Current status of the submission (PENDING, APPROVED, or REJECTED).
