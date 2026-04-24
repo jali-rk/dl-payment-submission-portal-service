@@ -7,7 +7,10 @@ import dopaminelite.payment_portal.dto.submission.PaymentSubmissionStatusUpdateR
 import dopaminelite.payment_portal.dto.submission.UploadedFileRefDto;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
+import dopaminelite.payment_portal.entity.StudyPack;
+import dopaminelite.payment_portal.entity.StudyPackPurchase;
 import dopaminelite.payment_portal.entity.UploadedFile;
+import dopaminelite.payment_portal.entity.enums.PurchaseStatus;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
@@ -16,6 +19,8 @@ import dopaminelite.payment_portal.mapper.PaymentSubmissionMapper;
 import dopaminelite.payment_portal.repository.PaymentPortalRepository;
 import dopaminelite.payment_portal.repository.PaymentSubmissionRepository;
 import dopaminelite.payment_portal.repository.PaymentSubmissionRepositoryLoggingUtil;
+import dopaminelite.payment_portal.repository.StudyPackPurchaseRepository;
+import dopaminelite.payment_portal.repository.StudyPackRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,6 +34,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -46,33 +52,70 @@ public class PaymentSubmissionService {
     private final PaymentPortalRepository portalRepository;
     private final PaymentSubmissionMapper submissionMapper;
     private final PaperCenterService paperCenterService;
+    private final StudyPackRepository studyPackRepository;
+    private final StudyPackPurchaseRepository studyPackPurchaseRepository;
+    private final EnrollmentService enrollmentService;
     
     /**
-     * Creates a new payment submission for a specific portal.
-     * Validates that the portal exists and that the portal name confirmation matches.
+     * Creates a new payment submission for a specific portal or study pack.
+     * Validates that the portal/study pack exists and that the name confirmation matches.
      *
-     * @param portalId the ID of the portal to submit to
-     * @param request the submission request containing student ID, portal name confirmation, and files
+     * @param entityId the ID of the portal or study pack to submit to
+     * @param request the submission request containing student ID, name confirmation, and files
      * @return the created submission with PENDING status
-     * @throws ResourceNotFoundException if the portal does not exist
-     * @throws ValidationException if portal name confirmation does not match
+     * @throws ResourceNotFoundException if the portal or study pack does not exist
+     * @throws ValidationException if name confirmation does not match
      */
     @Transactional
-    public PaymentSubmissionResponse createSubmission(UUID portalId, PaymentSubmissionCreateRequest request) {
-        PaymentPortal portal = portalRepository.findById(portalId)
-                .orElseThrow(() -> ResourceNotFoundException.portalNotFound(portalId));
-        
-        // Validate portal name confirmation
-        if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
-            throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
-        }
+    public PaymentSubmissionResponse createSubmission(UUID entityId, PaymentSubmissionCreateRequest request) {
+        String submissionType = request.getType() != null ? request.getType() : "PORTAL";
         
         PaymentSubmission submission = new PaymentSubmission();
         submission.setStudentId(request.getStudentId());
-        submission.setPortal(portal);
         submission.setStatus(SubmissionStatus.PENDING);
-        submission.setPortalNameAtSubmission(portal.getDisplayName());
         submission.setStudentSnapshot(submissionMapper.toStudentSnapshotEntity(request.getStudentSnapshot()));
+        submission.setSubmissionType(submissionType);
+        
+        if ("STUDY_PACK".equals(submissionType)) {
+            // Fetch study pack
+            StudyPack studyPack = studyPackRepository.findById(entityId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Study pack not found with id: " + entityId));
+            
+            // Validate name confirmation
+            if (!studyPack.getName().equals(request.getPortalNameConfirmation())) {
+                throw ValidationException.portalNameMismatch(studyPack.getName(), request.getPortalNameConfirmation());
+            }
+            
+            submission.setStudyPack(studyPack);
+            submission.setPortalNameAtSubmission(studyPack.getName());
+            submission.setPortal(null); // No portal for study pack submissions
+            
+            // Create PENDING StudyPackPurchase record immediately
+            StudyPackPurchase purchase = new StudyPackPurchase();
+            purchase.setStudentId(request.getStudentId());
+            purchase.setStudyPack(studyPack);
+            purchase.setAmount(studyPack.getPrice());
+            purchase.setCurrency("LKR");
+            purchase.setPurchaseStatus(PurchaseStatus.PENDING);
+            purchase.setPaymentGateway("MANUAL_BANK_SLIP");
+            purchase.setEnrollmentCompleted(false);
+            studyPackPurchaseRepository.save(purchase);
+            log.info("Created PENDING StudyPackPurchase record for student {} and study pack {}",
+                    request.getStudentId(), studyPack.getId());
+            
+        } else {
+            // Fetch portal
+            PaymentPortal portal = portalRepository.findById(entityId)
+                    .orElseThrow(() -> ResourceNotFoundException.portalNotFound(entityId));
+            
+            // Validate portal name confirmation
+            if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
+                throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
+            }
+            
+            submission.setPortal(portal);
+            submission.setPortalNameAtSubmission(portal.getDisplayName());
+        }
 
         // Create uploaded file entities
         List<UploadedFile> files = request.getFiles().stream()
@@ -182,6 +225,7 @@ public class PaymentSubmissionService {
     /**
      * Updates the status of a payment submission.
      * Validates that rejection reason is provided when status is REJECTED.
+     * When approving a study pack submission, enrolls the student in all classes.
      *
      * @param submissionId the submission ID to update
      * @param request the status update request containing new status and optional rejection reason
@@ -201,11 +245,117 @@ public class PaymentSubmissionService {
             }
         }
         
+        // Handle approval logic
+        if (request.getStatus() == SubmissionStatus.APPROVED && submission.getStatus() != SubmissionStatus.APPROVED) {
+            handleApproval(submission);
+        }
+        
+        // Handle rejection logic for study pack submissions
+        if (request.getStatus() == SubmissionStatus.REJECTED && "STUDY_PACK".equals(submission.getSubmissionType())) {
+            handleRejection(submission);
+        }
+        
         submission.setStatus(request.getStatus());
         submission.setRejectionReason(request.getRejectionReason());
         
         PaymentSubmission updatedSubmission = submissionRepository.save(submission);
         return submissionMapper.toResponse(updatedSubmission);
+    }
+    
+    /**
+     * Handles the approval logic for a submission.
+     * For regular portal submissions, enrolls student in single class.
+     * For study pack submissions, enrolls student in all classes in the pack AND creates a StudyPackPurchase record.
+     *
+     * @param submission the submission being approved
+     * @throws RuntimeException if any enrollment fails (triggers transaction rollback)
+     */
+    private void handleApproval(PaymentSubmission submission) {
+        if ("STUDY_PACK".equals(submission.getSubmissionType())) {
+            // Study pack submission - enroll in multiple classes AND create purchase record
+            StudyPack studyPack = submission.getStudyPack();
+            if (studyPack == null) {
+                log.error("Study pack is null for study pack submission: {}", submission.getId());
+                throw new ValidationException("Study pack reference is missing for this submission");
+            }
+            
+            log.info("Approving study pack submission {} - enrolling student {} in {} classes",
+                    submission.getId(), submission.getStudentId(), studyPack.getClassIds().size());
+            
+            // Enroll student in all classes
+            for (String classId : studyPack.getClassIds()) {
+                try {
+                    enrollmentService.enrollStudent(submission.getStudentId(), classId);
+                    log.info("Successfully enrolled student {} in class {}", submission.getStudentId(), classId);
+                } catch (Exception e) {
+                    log.error("Failed to enroll student {} in class {}", submission.getStudentId(), classId, e);
+                    throw new RuntimeException("Failed to enroll student in class " + classId + ": " + e.getMessage(), e);
+                }
+            }
+            
+            log.info("Successfully enrolled student {} in all {} classes from study pack {}",
+                    submission.getStudentId(), studyPack.getClassIds().size(), studyPack.getId());
+            
+            // Update existing StudyPackPurchase record from PENDING to COMPLETED
+            try {
+                StudyPackPurchase purchase = studyPackPurchaseRepository
+                        .findByStudentIdAndStudyPackId(submission.getStudentId(), studyPack.getId())
+                        .orElseThrow(() -> new RuntimeException("Purchase record not found for student " + 
+                                submission.getStudentId() + " and study pack " + studyPack.getId()));
+                
+                purchase.setPurchaseStatus(PurchaseStatus.COMPLETED);
+                purchase.setTransactionId(submission.getId().toString()); // Use submission ID as transaction reference
+                purchase.setEnrollmentCompleted(true);
+                purchase.setEnrollmentError(null);
+                
+                studyPackPurchaseRepository.save(purchase);
+                log.info("Updated StudyPackPurchase record to COMPLETED for student {} and study pack {}",
+                        submission.getStudentId(), studyPack.getId());
+            } catch (Exception e) {
+                log.error("Failed to update StudyPackPurchase record", e);
+                throw new RuntimeException("Failed to update purchase record: " + e.getMessage(), e);
+            }
+        } else {
+            // Regular portal submission - no automatic enrollment for portals
+            log.info("Approved regular portal submission {} for student {}", 
+                    submission.getId(), submission.getStudentId());
+        }
+    }
+    
+    /**
+     * Handles the rejection logic for a study pack submission.
+     * Updates the purchase status to FAILED.
+     *
+     * @param submission the submission being rejected
+     */
+    private void handleRejection(PaymentSubmission submission) {
+        StudyPack studyPack = submission.getStudyPack();
+        if (studyPack == null) {
+            log.warn("Study pack is null for study pack submission: {}", submission.getId());
+            return;
+        }
+        
+        log.info("Rejecting study pack submission {} - updating purchase status to FAILED",
+                submission.getId());
+        
+        try {
+            Optional<StudyPackPurchase> purchaseOpt = studyPackPurchaseRepository
+                    .findByStudentIdAndStudyPackId(submission.getStudentId(), studyPack.getId());
+            
+            if (purchaseOpt.isPresent()) {
+                StudyPackPurchase purchase = purchaseOpt.get();
+                purchase.setPurchaseStatus(PurchaseStatus.FAILED);
+                purchase.setEnrollmentError("Payment submission was rejected");
+                studyPackPurchaseRepository.save(purchase);
+                log.info("Updated StudyPackPurchase record to FAILED for student {} and study pack {}",
+                        submission.getStudentId(), studyPack.getId());
+            } else {
+                log.warn("No purchase record found for rejected submission {}", submission.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to update StudyPackPurchase record on rejection", e);
+            // Don't throw - rejection should still proceed even if purchase update fails
+        }
     }
     
 }

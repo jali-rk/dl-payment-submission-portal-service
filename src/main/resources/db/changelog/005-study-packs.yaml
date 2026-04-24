@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-study-packs
+      author: developer
+      changes:
+        - createTable:
+            tableName: study_packs
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: name
+                  type: varchar(200)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price
+                  type: decimal(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: boolean
+                  constraints:
+                    nullable: false
+                  defaultValueBoolean: true
+
+        - createTable:
+            tableName: study_pack_class_ids
+            columns:
+              - column:
+                  name: study_pack_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_study_pack_class_ids_study_pack
+                    references: study_packs(id)
+                    deleteCascade: true
+              - column:
+                  name: class_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+        - addPrimaryKey:
+            tableName: study_pack_class_ids
+            columnNames: study_pack_id, class_id
+            constraintName: pk_study_pack_class_ids

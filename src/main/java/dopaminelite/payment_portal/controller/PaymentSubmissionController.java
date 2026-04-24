@@ -53,7 +53,7 @@ public class PaymentSubmissionController {
      * Lists payment submissions with optional filtering and pagination.
      *
      * @param studentId filter by student ID, optional
-     * @param portalId filter by portal ID, optional
+     * @param portalId filter by portal ID or study pack ID, optional
      * @param status filter by submission status (PENDING, APPROVED, REJECTED), optional
      * @param month filter by portal's month (1-12), optional
      * @param year filter by portal's year, optional

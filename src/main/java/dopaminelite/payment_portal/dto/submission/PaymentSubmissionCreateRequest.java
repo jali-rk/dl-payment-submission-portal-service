@@ -46,4 +46,10 @@ public class PaymentSubmissionCreateRequest {
     @Valid
     private List<UploadedFileRefDto> files;
     
+    /**
+     * Type of submission: "PORTAL" or "STUDY_PACK".
+     * Optional, defaults to "PORTAL" if not provided.
+     */
+    private String type;
+    
 }
