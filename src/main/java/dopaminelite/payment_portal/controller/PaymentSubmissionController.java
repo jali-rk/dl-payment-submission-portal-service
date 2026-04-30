@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * REST controller for managing payment submissions.
@@ -132,6 +133,30 @@ public class PaymentSubmissionController {
     ) {
         PaymentSubmissionResponse response = submissionService.updateSubmissionStatus(submissionId, request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Finds students who dropped out after being active in all include portals.
+     * Returns student IDs who had COMPLETED payments in ALL include portals but NOT in ANY of the exclude portals.
+     *
+     * @param includePortalIds list of portal IDs - student must have paid in ALL these
+     * @param excludePortalIds list of portal IDs - student must NOT have paid in ANY of these
+     * @return list of student IDs who dropped out
+     */
+    @GetMapping("/analytics/dropouts")
+    public ResponseEntity<List<UUID>> getDropoutStudents(
+            @RequestParam List<UUID> includePortalIds,
+            @RequestParam List<UUID> excludePortalIds
+    ) {
+        log.info("[CONTROLLER] GET /analytics/dropouts - includePortalIds: {}, excludePortalIds: {}",
+                includePortalIds, excludePortalIds);
+        
+        List<UUID> dropoutStudentIds = submissionService.findDropoutStudents(
+                includePortalIds, excludePortalIds
+        );
+        
+        log.info("[CONTROLLER] Found {} dropout students", dropoutStudentIds.size());
+        return ResponseEntity.ok(dropoutStudentIds);
     }
     
 }

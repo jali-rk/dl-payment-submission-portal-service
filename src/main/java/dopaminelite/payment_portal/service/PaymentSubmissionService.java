@@ -207,5 +207,35 @@ public class PaymentSubmissionService {
         PaymentSubmission updatedSubmission = submissionRepository.save(submission);
         return submissionMapper.toResponse(updatedSubmission);
     }
+
+    /**
+     * Finds students who had COMPLETED payments in ALL include portals but NOT in ANY of the exclude portals.
+     * This identifies students who dropped out after being consistently active in all include portals.
+     *
+     * @param includePortalIds list of portal IDs - student must have COMPLETED payment in ALL these portals
+     * @param excludePortalIds list of portal IDs - student must NOT have COMPLETED payment in ANY of these
+     * @return list of student IDs who dropped out
+     */
+    public List<UUID> findDropoutStudents(
+            List<UUID> includePortalIds,
+            List<UUID> excludePortalIds
+    ) {
+        log.info("Finding dropout students - include portals: {}, exclude portals: {}",
+                includePortalIds, excludePortalIds);
+        
+        if (includePortalIds == null || includePortalIds.isEmpty()) {
+            throw new ValidationException("At least one include portal must be provided");
+        }
+        
+        if (excludePortalIds == null || excludePortalIds.isEmpty()) {
+            throw new ValidationException("At least one exclude portal must be provided");
+        }
+        
+        return submissionRepository.findDropoutStudentIds(
+                includePortalIds,
+                (long) includePortalIds.size(),
+                excludePortalIds
+        );
+    }
     
 }
