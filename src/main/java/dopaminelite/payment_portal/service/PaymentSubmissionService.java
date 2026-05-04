@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -122,18 +123,12 @@ public class PaymentSubmissionService {
             int limit,
             int offset
     ) {
-        log.debug("[SERVICE] listSubmissions called with - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenterId: {}, fromDate: {}, toDate: {}, limit: {}, offset: {}",
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, fromDate, toDate, limit, offset);
-        
         // Validate month/year inputs
         if (month != null && (month < 1 || month > 12)) {
-            log.warn("[SERVICE] Invalid month value: {}", month);
             throw new ValidationException("Month must be between 1 and 12");
         }
 
-        // JPQL query has ORDER BY, so we don't need Sort in Pageable
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        log.debug("[SERVICE] Pageable created - page: {}, size: {}", offset / limit, limit);
 
         // WORKAROUND: Some legacy rows have the paper center name stored in the ID column instead of the
         // actual UUID (upstream bug in BFF/User Service). This is not ideal as it adds an extra BFF call per
@@ -143,25 +138,17 @@ public class PaymentSubmissionService {
         if (paperCenterId != null) {
             Map<String, String> paperCenterNameMap = paperCenterService.getPaperCenterNameMap();
             paperCenterName = paperCenterNameMap.get(paperCenterId);
-            log.debug("[SERVICE] Resolved paperCenterId '{}' to name '{}'", paperCenterId, paperCenterName);
         }
-
-        log.info("[SERVICE] Calling repository.findByAdminFilters - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenterId: {}, paperCenterName: {}, fromDate: {}, toDate: {}",
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate);
 
         Page<PaymentSubmission> submissionPage = submissionRepository.findByAdminFilters(
                 studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate, pageable
         );
-        
-        log.info("[SERVICE] Repository query executed - total elements: {}, current page size: {}, total pages: {}",
-                submissionPage.getTotalElements(), submissionPage.getContent().size(), submissionPage.getTotalPages());
         
         List<PaymentSubmissionResponse> items = submissionPage.getContent()
                 .stream()
                 .map(submissionMapper::toResponse)
                 .toList();
         
-        log.info("[SERVICE] Mapped submissions to response DTOs - count: {}", items.size());
         return new PaginatedResponse<>(items, submissionPage.getTotalElements());
     }
     
@@ -209,20 +196,17 @@ public class PaymentSubmissionService {
     }
 
     /**
-     * Finds students who had COMPLETED payments in ALL include portals but NOT in ANY of the exclude portals.
+     * Finds students who had APPROVED payments in ALL include portals but NOT in ANY of the exclude portals.
      * This identifies students who dropped out after being consistently active in all include portals.
      *
-     * @param includePortalIds list of portal IDs - student must have COMPLETED payment in ALL these portals
-     * @param excludePortalIds list of portal IDs - student must NOT have COMPLETED payment in ANY of these
+     * @param includePortalIds list of portal IDs - student must have APPROVED payment in ALL these portals
+     * @param excludePortalIds list of portal IDs - student must NOT have APPROVED payment in ANY of these
      * @return list of student IDs who dropped out
      */
     public List<UUID> findDropoutStudents(
             List<UUID> includePortalIds,
             List<UUID> excludePortalIds
     ) {
-        log.info("Finding dropout students - include portals: {}, exclude portals: {}",
-                includePortalIds, excludePortalIds);
-        
         if (includePortalIds == null || includePortalIds.isEmpty()) {
             throw new ValidationException("At least one include portal must be provided");
         }
@@ -231,11 +215,16 @@ public class PaymentSubmissionService {
             throw new ValidationException("At least one exclude portal must be provided");
         }
         
-        return submissionRepository.findDropoutStudentIds(
+        List<UUID> repositoryResult = submissionRepository.findDropoutStudentIds(
                 includePortalIds,
                 (long) includePortalIds.size(),
                 excludePortalIds
         );
+        
+        log.debug("Found {} dropout students", repositoryResult.size());
+        
+        // Wrap in new ArrayList to avoid Hibernate proxy serialization issues
+        return new ArrayList<>(repositoryResult);
     }
     
 }

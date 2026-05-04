@@ -144,13 +144,13 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
     @Query("SELECT ps1.studentId FROM PaymentSubmission ps1 " +
            "WHERE ps1.portal.id IN :includePortalIds " +
            "AND ps1.status = 'APPROVED' " +
-           "GROUP BY ps1.studentId " +
-           "HAVING COUNT(DISTINCT ps1.portal.id) = :includePortalCount " +
            "AND ps1.studentId NOT IN (" +
            "  SELECT ps2.studentId FROM PaymentSubmission ps2 " +
            "  WHERE ps2.portal.id IN :excludePortalIds " +
            "  AND ps2.status = 'APPROVED'" +
-           ")")
+           ") " +
+           "GROUP BY ps1.studentId " +
+           "HAVING COUNT(DISTINCT ps1.portal.id) = :includePortalCount")
     List<UUID> findDropoutStudentIds(
             @Param("includePortalIds") List<UUID> includePortalIds,
             @Param("includePortalCount") Long includePortalCount,

@@ -27,6 +27,7 @@ import java.util.List;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1/submissions")
 @RequiredArgsConstructor
 public class PaymentSubmissionController {
     
@@ -80,9 +81,6 @@ public class PaymentSubmissionController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        log.info("[CONTROLLER] Received GET /submissions request - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenter: {}, submittedAtFrom: {}, submittedAtTo: {}, limit: {}, offset: {}",
-                studentId, portalId, status, month, year, studyMedium, paperCenter, submittedAtFrom, submittedAtTo, limit, offset);
-
         // Convert OffsetDateTime to LocalDateTime using Asia/Colombo timezone
         ZoneId sriLankaZone = ZoneId.of("Asia/Colombo");
         LocalDateTime fromDate = null;
@@ -99,8 +97,6 @@ public class PaymentSubmissionController {
             studentId, portalId, status, month, year, studyMedium, paperCenter, fromDate, toDate, limit, offset
         );
 
-        log.info("[CONTROLLER] Successfully retrieved submissions - total count: {}, returned items: {}",
-                response.getTotal(), response.getItems().size());
         return ResponseEntity.ok(response);
     }
     
@@ -137,7 +133,7 @@ public class PaymentSubmissionController {
 
     /**
      * Finds students who dropped out after being active in all include portals.
-     * Returns student IDs who had COMPLETED payments in ALL include portals but NOT in ANY of the exclude portals.
+     * Returns student IDs who had APPROVED payments in ALL include portals but NOT in ANY of the exclude portals.
      *
      * @param includePortalIds list of portal IDs - student must have paid in ALL these
      * @param excludePortalIds list of portal IDs - student must NOT have paid in ANY of these
@@ -145,18 +141,19 @@ public class PaymentSubmissionController {
      */
     @GetMapping("/analytics/dropouts")
     public ResponseEntity<List<UUID>> getDropoutStudents(
-            @RequestParam List<UUID> includePortalIds,
-            @RequestParam List<UUID> excludePortalIds
+            @RequestParam("includePortalIds") List<UUID> includePortalIds,
+            @RequestParam("excludePortalIds") List<UUID> excludePortalIds
     ) {
-        log.info("[CONTROLLER] GET /analytics/dropouts - includePortalIds: {}, excludePortalIds: {}",
+        log.debug("Fetching dropout students - includePortalIds: {}, excludePortalIds: {}",
                 includePortalIds, excludePortalIds);
         
-        List<UUID> dropoutStudentIds = submissionService.findDropoutStudents(
+        List<UUID> studentIds = submissionService.findDropoutStudents(
                 includePortalIds, excludePortalIds
         );
         
-        log.info("[CONTROLLER] Found {} dropout students", dropoutStudentIds.size());
-        return ResponseEntity.ok(dropoutStudentIds);
+        log.debug("Found {} dropout students", studentIds.size());
+        
+        return ResponseEntity.ok(studentIds);
     }
     
 }
