@@ -1,22 +1,33 @@
 package dopaminelite.payment_portal.controller;
 
+import java.util.Base64;
+import java.util.UUID;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.portal.BulkPortalVisibilityUpdateRequest;
 import dopaminelite.payment_portal.dto.portal.PaymentPortalCreateRequest;
 import dopaminelite.payment_portal.dto.portal.PaymentPortalResponse;
 import dopaminelite.payment_portal.dto.portal.PaymentPortalUpdateRequest;
+import dopaminelite.payment_portal.exception.DuplicateResourceException;
+import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.service.PaymentPortalService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.Base64;
-import java.util.UUID;
 
 /**
  * REST controller for managing payment portals.
@@ -35,7 +46,7 @@ public class PaymentPortalController {
      * @param month filter by month (1-12), optional
      * @param year filter by year, optional
      * @param isPublished filter by published status, optional
-     * @param limit maximum number of results per page, defaults to 10
+     * @param limit maximum number of results per page, defaults to 1000
      * @param offset number of results to skip, defaults to 0
      * @return paginated list of payment portals
      */
@@ -44,12 +55,12 @@ public class PaymentPortalController {
             @RequestParam(required = false) Integer month,
             @RequestParam(required = false) Integer year,
             @RequestParam(required = false) Boolean isPublished,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "1000") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
         // Validate limit range
-        if (limit < 1 || limit > 100) {
-            limit = 20;
+        if (limit < 1 || limit > 1000) {
+            limit = 1000;
         }
         
         PaginatedResponse<PaymentPortalResponse> response = portalService.listPortals(
