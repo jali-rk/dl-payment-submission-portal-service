@@ -75,6 +75,10 @@ public class PaymentSubmissionService {
         )).size() > 0;
 
         if(hasActiveSubmission) {
+            log.error("Validation Error: Active submission already exists. studentId={}, portalId={}",
+            request.getStudentId(),
+            portalId
+            );
             throw new RuntimeException("Validation Error: Cannot submit. A PENDING or APPROVED submission already exists for this portal.");
         }
         
