@@ -66,6 +66,21 @@ public class PaymentSubmissionService {
         if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
             throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
         }
+
+        // Prevent submission if student already has a PENDING or APPROVED submission for this portal
+        boolean hasActiveSubmission = submissionRepository.findAll((root, query, cb) -> cb.and(
+            cb.equal(root.get("studentId"), request.getStudentId()),
+            cb.equal(root.get("portal").get("id"), portalId),
+            root.get("status").in(SubmissionStatus.PENDING, SubmissionStatus.APPROVED)
+        )).size() > 0;
+
+        if(hasActiveSubmission) {
+            log.error("Validation Error: Active submission already exists. studentId={}, portalId={}",
+            request.getStudentId(),
+            portalId
+            );
+            throw new RuntimeException("Validation Error: Cannot submit. A PENDING or APPROVED submission already exists for this portal.");
+        }
         
         PaymentSubmission submission = new PaymentSubmission();
         submission.setStudentId(request.getStudentId());
