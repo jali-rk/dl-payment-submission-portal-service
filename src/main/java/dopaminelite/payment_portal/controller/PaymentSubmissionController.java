@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * REST controller for managing payment submissions.
@@ -26,6 +27,7 @@ import java.util.UUID;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1/submissions")
 @RequiredArgsConstructor
 public class PaymentSubmissionController {
     
@@ -79,9 +81,6 @@ public class PaymentSubmissionController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(defaultValue = "0") int offset
     ) {
-        log.info("[CONTROLLER] Received GET /submissions request - studentId: {}, portalId: {}, status: {}, month: {}, year: {}, studyMedium: {}, paperCenter: {}, submittedAtFrom: {}, submittedAtTo: {}, limit: {}, offset: {}",
-                studentId, portalId, status, month, year, studyMedium, paperCenter, submittedAtFrom, submittedAtTo, limit, offset);
-
         // Convert OffsetDateTime to LocalDateTime using Asia/Colombo timezone
         ZoneId sriLankaZone = ZoneId.of("Asia/Colombo");
         LocalDateTime fromDate = null;
@@ -98,8 +97,6 @@ public class PaymentSubmissionController {
             studentId, portalId, status, month, year, studyMedium, paperCenter, fromDate, toDate, limit, offset
         );
 
-        log.info("[CONTROLLER] Successfully retrieved submissions - total count: {}, returned items: {}",
-                response.getTotal(), response.getItems().size());
         return ResponseEntity.ok(response);
     }
     
@@ -132,6 +129,31 @@ public class PaymentSubmissionController {
     ) {
         PaymentSubmissionResponse response = submissionService.updateSubmissionStatus(submissionId, request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Finds students who dropped out after being active in all include portals.
+     * Returns student IDs who had APPROVED payments in ALL include portals but NOT in ANY of the exclude portals.
+     *
+     * @param includePortalIds list of portal IDs - student must have paid in ALL these
+     * @param excludePortalIds list of portal IDs - student must NOT have paid in ANY of these
+     * @return list of student IDs who dropped out
+     */
+    @GetMapping("/analytics/dropouts")
+    public ResponseEntity<List<UUID>> getDropoutStudents(
+            @RequestParam("includePortalIds") List<UUID> includePortalIds,
+            @RequestParam("excludePortalIds") List<UUID> excludePortalIds
+    ) {
+        log.debug("Fetching dropout students - includePortalIds: {}, excludePortalIds: {}",
+                includePortalIds, excludePortalIds);
+        
+        List<UUID> studentIds = submissionService.findDropoutStudents(
+                includePortalIds, excludePortalIds
+        );
+        
+        log.debug("Found {} dropout students", studentIds.size());
+        
+        return ResponseEntity.ok(studentIds);
     }
     
 }

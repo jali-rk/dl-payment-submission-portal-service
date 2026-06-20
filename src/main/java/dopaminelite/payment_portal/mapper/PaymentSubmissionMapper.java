@@ -31,14 +31,25 @@ public class PaymentSubmissionMapper {
         PaymentSubmissionResponse response = new PaymentSubmissionResponse();
         response.setId(submission.getId());
         response.setStudentId(submission.getStudentId());
-        response.setPortalId(submission.getPortal().getId());
         response.setStatus(submission.getStatus());
         response.setRejectionReason(submission.getRejectionReason());
         response.setPortalNameAtSubmission(submission.getPortalNameAtSubmission());
-        response.setPortal(new PortalRefDto(submission.getPortal().getId(), submission.getPortal().getDisplayName()));
         response.setStudent(toStudentSnapshotDto(submission.getStudentSnapshot()));
         response.setSubmittedAt(submission.getSubmittedAt());
         response.setLastUpdatedAt(submission.getLastUpdatedAt());
+
+        // Handle portal - can be null for study pack submissions
+        if (submission.getPortal() != null) {
+            response.setPortalId(submission.getPortal().getId());
+            response.setPortal(new PortalRefDto(
+                submission.getPortal().getId(), 
+                submission.getPortal().getDisplayName()
+            ));
+        } else {
+            // Portal is null - likely a study pack submission
+            response.setPortalId(null);
+            response.setPortal(null);
+        }
 
         if (submission.getUploadedFiles() != null) {
             response.setUploadedFiles(

@@ -132,4 +132,29 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
      */
     List<PaymentSubmission> findByIdIn(List<UUID> submissionIds);
 
+    /**
+     * Finds student IDs who had APPROVED payments in ALL include portals but NOT in ANY of the exclude portals.
+     * This identifies students who dropped out after being active in all include portals.
+     *
+     * @param includePortalIds list of portal IDs - student must have APPROVED payment in ALL these portals
+     * @param includePortalCount the count of include portals (used for HAVING clause)
+     * @param excludePortalIds list of portal IDs - student must NOT have APPROVED payment in ANY of these
+     * @return list of student IDs who dropped out
+     */
+    @Query("SELECT ps1.studentId FROM PaymentSubmission ps1 " +
+           "WHERE ps1.portal.id IN :includePortalIds " +
+           "AND ps1.status = 'APPROVED' " +
+           "AND ps1.studentId NOT IN (" +
+           "  SELECT ps2.studentId FROM PaymentSubmission ps2 " +
+           "  WHERE ps2.portal.id IN :excludePortalIds " +
+           "  AND ps2.status = 'APPROVED'" +
+           ") " +
+           "GROUP BY ps1.studentId " +
+           "HAVING COUNT(DISTINCT ps1.portal.id) = :includePortalCount")
+    List<UUID> findDropoutStudentIds(
+            @Param("includePortalIds") List<UUID> includePortalIds,
+            @Param("includePortalCount") Long includePortalCount,
+            @Param("excludePortalIds") List<UUID> excludePortalIds
+    );
+
 }
