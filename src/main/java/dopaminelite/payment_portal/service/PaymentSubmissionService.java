@@ -10,6 +10,7 @@ import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.UploadedFile;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
+import dopaminelite.payment_portal.exception.DuplicateResourceException;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaymentSubmissionMapper;
@@ -95,8 +96,16 @@ public class PaymentSubmissionService {
                 .collect(Collectors.toList());
         submission.setUploadedFiles(files);
         
-        PaymentSubmission savedSubmission = submissionRepository.save(submission);
-        return submissionMapper.toResponse(savedSubmission);
+        try {
+            PaymentSubmission savedSubmission = submissionRepository.save(submission);
+            return submissionMapper.toResponse(savedSubmission);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            // The DB unique partial index (idx_unique_active_submission) caught a concurrent duplicate
+            log.warn("Duplicate submission blocked (DB constraint). studentId={}, portalId={}",
+                request.getStudentId(), portalId);
+            throw new DuplicateResourceException(
+                "Cannot submit. A PENDING or APPROVED submission already exists for this portal.");
+        }
     }
     
     private UploadedFile createUploadedFile(UploadedFileRefDto dto, PaymentSubmission submission) {
