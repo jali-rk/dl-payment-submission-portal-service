@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/uploaded_files.yaml
   - include:
       file: db/changelog/004-add-student-snapshot.yaml
+  - include:
+      file: db/changelog/005-add-unique-active-submission.yaml

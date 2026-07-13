@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005a-cleanup-duplicate-active-submissions
+      author: copilot
+      comment: >
+        Reject duplicate PENDING/APPROVED submissions so the unique index can be created.
+        Keeps only the most recent submission per (student_id, portal_id).
+      changes:
+        - sql:
+            sql: >
+              UPDATE payment_submissions ps
+              SET status = 'REJECTED',
+                  rejection_reason = 'Auto-rejected: duplicate submission cleaned up during migration',
+                  last_updated_at = NOW()
+              WHERE ps.status IN ('PENDING', 'APPROVED')
+                AND ps.id NOT IN (
+                  SELECT DISTINCT ON (student_id, portal_id) id
+                  FROM payment_submissions
+                  WHERE status IN ('PENDING', 'APPROVED')
+                  ORDER BY student_id, portal_id, submitted_at DESC
+                );
+
+  - changeSet:
+      id: 005b-add-unique-active-submission-index
+      author: copilot
+      comment: >
+        Prevents a student from having more than one PENDING or APPROVED submission
+        per portal. This is the permanent fix for the race-condition duplicate bug.
+      changes:
+        - sql:
+            sql: >
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_submission
+              ON payment_submissions (student_id, portal_id)
+              WHERE status IN ('PENDING', 'APPROVED');
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_unique_active_submission;
