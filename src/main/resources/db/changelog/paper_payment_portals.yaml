@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-paper-payment-portals
+      author: copilot
+      changes:
+        - createTable:
+            tableName: paper_payment_portals
+            columns:
+              - column:
+                  name: paper_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: portal_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_ppp_paper
+            baseTableName: paper_payment_portals
+            baseColumnNames: paper_id
+            referencedTableName: papers
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_ppp_portal
+            baseTableName: paper_payment_portals
+            baseColumnNames: portal_id
+            referencedTableName: payment_portals
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            tableName: paper_payment_portals
+            indexName: idx_ppp_portal_id
+            columns:
+              - column:
+                  name: portal_id

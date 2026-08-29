@@ -7,3 +7,11 @@ databaseChangeLog:
       file: db/changelog/uploaded_files.yaml
   - include:
       file: db/changelog/004-add-student-snapshot.yaml
+  - include:
+      file: db/changelog/papers.yaml
+  - include:
+      file: db/changelog/paper_payment_portals.yaml
+  - include:
+      file: db/changelog/paper_slots.yaml
+  - include:
+      file: db/changelog/paper_slot_creation_results.yaml

@@ -1,0 +1,70 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-paper-slot-creation-results
+      author: copilot
+      changes:
+        - createTable:
+            tableName: paper_slot_creation_results
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: payment_submission_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: paper_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: paper_title_snapshot
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: paper_slot_id
+                  type: uuid
+              - column:
+                  name: outcome
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: message
+                  type: TEXT
+              - column:
+                  name: attempted_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_pscr_submission
+            baseTableName: paper_slot_creation_results
+            baseColumnNames: payment_submission_id
+            referencedTableName: payment_submissions
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_pscr_paper
+            baseTableName: paper_slot_creation_results
+            baseColumnNames: paper_id
+            referencedTableName: papers
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_pscr_paper_slot
+            baseTableName: paper_slot_creation_results
+            baseColumnNames: paper_slot_id
+            referencedTableName: paper_slots
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - addUniqueConstraint:
+            tableName: paper_slot_creation_results
+            columnNames: payment_submission_id, paper_id
+            constraintName: uq_pscr_submission_paper

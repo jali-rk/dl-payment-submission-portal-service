@@ -10,6 +10,7 @@ import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.UploadedFile;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
+import dopaminelite.payment_portal.event.PaymentSubmissionApprovedEvent;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaymentSubmissionMapper;
@@ -18,6 +19,7 @@ import dopaminelite.payment_portal.repository.PaymentSubmissionRepository;
 import dopaminelite.payment_portal.repository.PaymentSubmissionRepositoryLoggingUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -46,6 +48,7 @@ public class PaymentSubmissionService {
     private final PaymentPortalRepository portalRepository;
     private final PaymentSubmissionMapper submissionMapper;
     private final PaperCenterService paperCenterService;
+    private final ApplicationEventPublisher eventPublisher;
     
     /**
      * Creates a new payment submission for a specific portal.
@@ -218,9 +221,14 @@ public class PaymentSubmissionService {
         
         submission.setStatus(request.getStatus());
         submission.setRejectionReason(request.getRejectionReason());
-        
+
         PaymentSubmission updatedSubmission = submissionRepository.save(submission);
+
+        if (updatedSubmission.getStatus() == SubmissionStatus.APPROVED) {
+            eventPublisher.publishEvent(new PaymentSubmissionApprovedEvent(updatedSubmission.getId()));
+        }
+
         return submissionMapper.toResponse(updatedSubmission);
     }
-    
+
 }
