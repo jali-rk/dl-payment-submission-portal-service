@@ -24,6 +24,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
 
     boolean existsByPaperIdAndPaymentSubmissionId(UUID paperId, UUID paymentSubmissionId);
 
+    boolean existsByPaperId(UUID paperId);
+
     Optional<PaperSlot> findByPaperIdAndPaymentSubmissionId(UUID paperId, UUID paymentSubmissionId);
 
     /**

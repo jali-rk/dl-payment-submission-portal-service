@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.dto.paper;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -38,5 +39,12 @@ public class PaperCreateRequest {
      */
     @NotEmpty(message = "At least one linked payment portal is required")
     private List<UUID> linkedPortalIds;
+
+    /**
+     * Optional mark scheme (which sections apply and their max marks). Can be omitted here and
+     * set later via {@code PUT /papers/{paperId}/mark-scheme} instead.
+     */
+    @Valid
+    private MarkSchemeDto markScheme;
 
 }

@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,5 +54,28 @@ public class Paper extends AuditableEntity {
      */
     @Column(nullable = true)
     private UUID createdByAdminId;
+
+    /**
+     * Maximum mark for this paper's MCQ section, or null if the paper has no MCQ section.
+     * Set independently of {@link #structuredMaxMarks}/{@link #essayMaxMarks} — the three do
+     * not need to relate to each other or sum to anything. Once any {@link PaperMark} exists
+     * for this paper, all three become immutable (see {@code PaperService.updateMarkScheme}).
+     */
+    @Column(name = "mcq_max_marks", precision = 6, scale = 3)
+    private BigDecimal mcqMaxMarks;
+
+    /**
+     * Maximum mark for this paper's Structured section, or null if the paper has no such
+     * section. See {@link #mcqMaxMarks} for the independence/locking rules that also apply here.
+     */
+    @Column(name = "structured_max_marks", precision = 6, scale = 3)
+    private BigDecimal structuredMaxMarks;
+
+    /**
+     * Maximum mark for this paper's Essay section, or null if the paper has no such section.
+     * See {@link #mcqMaxMarks} for the independence/locking rules that also apply here.
+     */
+    @Column(name = "essay_max_marks", precision = 6, scale = 3)
+    private BigDecimal essayMaxMarks;
 
 }

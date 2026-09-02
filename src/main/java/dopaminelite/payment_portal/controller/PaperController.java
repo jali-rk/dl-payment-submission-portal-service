@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.controller;
 
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
+import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
@@ -99,6 +100,38 @@ public class PaperController {
     ) {
         PaperResponse response = paperService.updatePaper(paperId, request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Sets or replaces a paper's mark scheme (which sections apply and their max marks).
+     * Locked once any mark has been recorded for the paper — delete all marks first to unlock.
+     *
+     * @param paperId the UUID of the paper
+     * @param request the new mark scheme; at least one section must be set
+     * @return the updated paper
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no paper exists with the given ID
+     * @throws dopaminelite.payment_portal.exception.ValidationException if the scheme has no section enabled, or the paper's scheme is locked
+     */
+    @PutMapping("/{paperId}/mark-scheme")
+    public ResponseEntity<PaperResponse> updateMarkScheme(
+            @PathVariable UUID paperId,
+            @Valid @RequestBody MarkSchemeDto request
+    ) {
+        PaperResponse response = paperService.updateMarkScheme(paperId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Deletes a paper, provided nothing depends on it yet.
+     *
+     * @param paperId the UUID of the paper to delete
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no paper exists with the given ID
+     * @throws dopaminelite.payment_portal.exception.ValidationException if the paper has any paper slots and/or marks recorded against it
+     */
+    @DeleteMapping("/{paperId}")
+    public ResponseEntity<Void> deletePaper(@PathVariable UUID paperId) {
+        paperService.deletePaper(paperId);
+        return ResponseEntity.noContent().build();
     }
 
 }

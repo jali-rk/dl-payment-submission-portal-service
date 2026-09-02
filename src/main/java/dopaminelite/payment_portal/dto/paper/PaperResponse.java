@@ -30,6 +30,12 @@ public class PaperResponse {
 
     private List<PortalRefDto> linkedPortals;
 
+    /**
+     * The paper's mark scheme. Always present; individual fields are null when that section
+     * isn't enabled, and all three are null when no scheme has been configured yet.
+     */
+    private MarkSchemeDto markScheme;
+
     private UUID createdByAdminId;
 
     private LocalDateTime createdAt;

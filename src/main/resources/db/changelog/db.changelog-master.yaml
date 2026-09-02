@@ -15,3 +15,7 @@ databaseChangeLog:
       file: db/changelog/paper_slots.yaml
   - include:
       file: db/changelog/paper_slot_creation_results.yaml
+  - include:
+      file: db/changelog/009-add-paper-mark-scheme.yaml
+  - include:
+      file: db/changelog/paper_marks.yaml

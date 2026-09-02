@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.mapper;
 
+import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.submission.PortalRefDto;
 import dopaminelite.payment_portal.entity.Paper;
@@ -35,6 +36,7 @@ public class PaperMapper {
         response.setCreatedByAdminId(paper.getCreatedByAdminId());
         response.setCreatedAt(paper.getCreatedAt());
         response.setUpdatedAt(paper.getUpdatedAt());
+        response.setMarkScheme(toMarkScheme(paper));
 
         List<PortalRefDto> linkedPortals = paper.getLinkedPortals().stream()
                 .map(this::toPortalRef)
@@ -46,6 +48,10 @@ public class PaperMapper {
 
     private PortalRefDto toPortalRef(PaymentPortal portal) {
         return new PortalRefDto(portal.getId(), portal.getDisplayName());
+    }
+
+    private MarkSchemeDto toMarkScheme(Paper paper) {
+        return new MarkSchemeDto(paper.getMcqMaxMarks(), paper.getStructuredMaxMarks(), paper.getEssayMaxMarks());
     }
 
 }

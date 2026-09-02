@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.service;
 
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
+import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
@@ -10,7 +11,9 @@ import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMapper;
+import dopaminelite.payment_portal.repository.PaperMarkRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
+import dopaminelite.payment_portal.repository.PaperSlotRepository;
 import dopaminelite.payment_portal.repository.PaymentPortalRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -33,6 +36,8 @@ public class PaperService {
 
     private final PaperRepository paperRepository;
     private final PaymentPortalRepository portalRepository;
+    private final PaperMarkRepository paperMarkRepository;
+    private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
 
     /**
@@ -91,8 +96,42 @@ public class PaperService {
         paper.setCreatedByAdminId(adminId);
         paper.setLinkedPortals(resolvePortals(request.getLinkedPortalIds()));
 
+        if (request.getMarkScheme() != null) {
+            validateMarkSchemeShape(request.getMarkScheme());
+            applyMarkScheme(paper, request.getMarkScheme());
+        }
+
         Paper savedPaper = paperRepository.save(paper);
         return paperMapper.toResponse(savedPaper);
+    }
+
+    /**
+     * Sets or replaces a paper's mark scheme (which sections are enabled and their max marks).
+     *
+     * @param paperId the paper ID
+     * @param scheme the new mark scheme; at least one of its three fields must be non-null
+     * @return the updated paper
+     * @throws ResourceNotFoundException if no paper exists with the given ID
+     * @throws ValidationException if the scheme has no section enabled, or if the paper
+     *         already has marks recorded (the scheme locks once any mark exists — delete all
+     *         marks for the paper first to unlock it)
+     */
+    @Transactional
+    public PaperResponse updateMarkScheme(UUID paperId, MarkSchemeDto scheme) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        validateMarkSchemeShape(scheme);
+
+        long existingMarkCount = paperMarkRepository.countByPaperId(paperId);
+        if (existingMarkCount > 0) {
+            throw ValidationException.markSchemeLocked(paperId, existingMarkCount);
+        }
+
+        applyMarkScheme(paper, scheme);
+
+        Paper updatedPaper = paperRepository.save(paper);
+        return paperMapper.toResponse(updatedPaper);
     }
 
     /**
@@ -135,10 +174,46 @@ public class PaperService {
         return paperMapper.toResponse(updatedPaper);
     }
 
+    /**
+     * Deletes a paper, provided nothing depends on it yet.
+     *
+     * @param paperId the paper ID to delete
+     * @throws ResourceNotFoundException if no paper exists with the given ID
+     * @throws ValidationException if the paper has any paper slots and/or marks recorded
+     *         against it — remove those first
+     */
+    @Transactional
+    public void deletePaper(UUID paperId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        if (paperSlotRepository.existsByPaperId(paperId) || paperMarkRepository.countByPaperId(paperId) > 0) {
+            throw ValidationException.paperHasDependents(paperId);
+        }
+
+        paperRepository.delete(paper);
+    }
+
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
             throw new ValidationException("Paper start date must not be after its end date");
         }
+    }
+
+    /**
+     * Validates that a mark scheme has at least one section enabled. The three sections are
+     * otherwise independent of each other — no sum-to-100 or similar cross-field rule applies.
+     */
+    private void validateMarkSchemeShape(MarkSchemeDto scheme) {
+        if (scheme.getMcqMaxMarks() == null && scheme.getStructuredMaxMarks() == null && scheme.getEssayMaxMarks() == null) {
+            throw ValidationException.markSchemeRequiresAtLeastOneSection();
+        }
+    }
+
+    private void applyMarkScheme(Paper paper, MarkSchemeDto scheme) {
+        paper.setMcqMaxMarks(scheme.getMcqMaxMarks());
+        paper.setStructuredMaxMarks(scheme.getStructuredMaxMarks());
+        paper.setEssayMaxMarks(scheme.getEssayMaxMarks());
     }
 
     private List<PaymentPortal> resolvePortals(List<UUID> portalIds) {
