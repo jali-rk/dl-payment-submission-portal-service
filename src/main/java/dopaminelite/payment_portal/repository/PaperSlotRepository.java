@@ -72,11 +72,11 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "(:studentId IS NULL OR sub.studentId = :studentId) AND " +
            "(:studentCodeNumber IS NULL OR sub.studentSnapshot.codeNumber = :studentCodeNumber) AND " +
            "(:statusFilter IS NULL OR " +
-           "  (:statusFilter = 'CONSUMED' AND ps.consumedAt IS NOT NULL) OR " +
-           "  (:statusFilter != 'CONSUMED' AND ps.consumedAt IS NULL AND " +
-           "    ((:statusFilter = 'SCHEDULED' AND :today < p.startDate) OR " +
-           "     (:statusFilter = 'AVAILABLE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
-           "     (:statusFilter = 'EXPIRED' AND :today > p.endDate)))) " +
+           "  (CAST(:statusFilter AS string) = 'CONSUMED' AND ps.consumedAt IS NOT NULL) OR " +
+           "  (CAST(:statusFilter AS string) != 'CONSUMED' AND ps.consumedAt IS NULL AND " +
+           "    ((CAST(:statusFilter AS string) = 'SCHEDULED' AND :today < p.startDate) OR " +
+           "     (CAST(:statusFilter AS string) = 'AVAILABLE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
+           "     (CAST(:statusFilter AS string) = 'EXPIRED' AND :today > p.endDate)))) " +
            "ORDER BY ps.createdAt DESC")
     Page<PaperSlot> findByFilters(
             @Param("paperId") UUID paperId,

@@ -10,7 +10,6 @@ import dopaminelite.payment_portal.dto.paper.PaperSlotCreationResultDto;
 import dopaminelite.payment_portal.dto.paper.PaperSlotResponse;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperSlot;
-import dopaminelite.payment_portal.entity.PaperSlotCreationResult;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.enums.PaperSlotCreationOutcome;
 import dopaminelite.payment_portal.entity.enums.PaperSlotStatus;
@@ -79,15 +78,19 @@ public class PaperSlotService {
         }
 
         List<Paper> linkedPapers = paperRepository.findByLinkedPortalId(submission.getPortal().getId());
-        LocalDate today = LocalDate.now(SRI_LANKA_ZONE);
+        linkedPapers.forEach(paper -> attemptCreateSlot(submissionId, paper.getId(), paper.getTitle()));
 
-        return linkedPapers.stream()
-                .map(paper -> attemptCreateSlot(submissionId, paper.getId(), paper.getTitle()))
-                .map(result -> paperSlotMapper.toResultDto(result, today))
-                .toList();
+        // Build the return value from a fresh, eagerly-fetched read rather than the entities
+        // returned by the REQUIRES_NEW writer calls above: each of those runs in its own
+        // transaction that closes the moment it returns, so any lazy association on the
+        // entity it hands back (e.g. slot.getPaper()) is bound to an already-closed session
+        // and throws LazyInitializationException the moment something tries to read it here.
+        // getCreationResults() re-reads everything through a query that eagerly joins what's
+        // needed, sidestepping that entirely.
+        return getCreationResults(submissionId);
     }
 
-    private PaperSlotCreationResult attemptCreateSlot(UUID submissionId, UUID paperId, String paperTitle) {
+    private void attemptCreateSlot(UUID submissionId, UUID paperId, String paperTitle) {
         PaperSlot slot;
         PaperSlotCreationOutcome outcome;
         String message = null;
@@ -117,7 +120,7 @@ public class PaperSlotService {
                     paperTitle, submissionId);
         }
 
-        return paperSlotWriter.upsertResult(submissionId, paperId, paperTitle, outcome, message, slot);
+        paperSlotWriter.upsertResult(submissionId, paperId, paperTitle, outcome, message, slot);
     }
 
     /**

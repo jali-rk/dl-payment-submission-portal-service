@@ -39,11 +39,11 @@ public interface PaperRepository extends JpaRepository<Paper, UUID> {
      * @return a page of matching papers
      */
     @Query("SELECT p FROM Paper p WHERE " +
-           "(:titleSearch IS NULL OR LOWER(p.title) LIKE LOWER(CONCAT('%', :titleSearch, '%'))) AND " +
+           "(:titleSearch IS NULL OR LOWER(p.title) LIKE LOWER(CONCAT('%', CAST(:titleSearch AS string), '%'))) AND " +
            "(:windowFilter IS NULL OR " +
-           "  (:windowFilter = 'UPCOMING' AND p.startDate > :today) OR " +
-           "  (:windowFilter = 'ACTIVE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
-           "  (:windowFilter = 'PAST' AND p.endDate < :today)) " +
+           "  (CAST(:windowFilter AS string) = 'UPCOMING' AND p.startDate > :today) OR " +
+           "  (CAST(:windowFilter AS string) = 'ACTIVE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
+           "  (CAST(:windowFilter AS string) = 'PAST' AND p.endDate < :today)) " +
            "ORDER BY p.startDate DESC")
     Page<Paper> findByFilters(
             @Param("titleSearch") String titleSearch,
