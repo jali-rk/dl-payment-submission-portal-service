@@ -58,6 +58,7 @@ public class PaperSlotService {
     private final PaymentSubmissionRepository paymentSubmissionRepository;
     private final PaperSlotMapper paperSlotMapper;
     private final PaperSlotWriter paperSlotWriter;
+    private final CalendarEventService calendarEventService;
 
     /**
      * Creates (or re-attempts) a paper slot for every paper linked to the submission's portal.
@@ -78,7 +79,10 @@ public class PaperSlotService {
         }
 
         List<Paper> linkedPapers = paperRepository.findByLinkedPortalId(submission.getPortal().getId());
-        linkedPapers.forEach(paper -> attemptCreateSlot(submissionId, paper.getId(), paper.getTitle()));
+        linkedPapers.forEach(paper -> {
+            attemptCreateSlot(submissionId, paper.getId(), paper.getTitle());
+            attachCalendarEvent(paper, submission.getStudentId());
+        });
 
         // Build the return value from a fresh, eagerly-fetched read rather than the entities
         // returned by the REQUIRES_NEW writer calls above: each of those runs in its own
@@ -121,6 +125,22 @@ public class PaperSlotService {
         }
 
         paperSlotWriter.upsertResult(submissionId, paperId, paperTitle, outcome, message, slot);
+    }
+
+    /**
+     * Attaches the student to this paper's shared calendar event — an additional, independent
+     * side effect of the same approval moment, never a precondition for slot creation above.
+     * Caught and logged rather than allowed to propagate: a calendar-visibility failure for one
+     * paper must not abort the {@code forEach} loop and skip slot creation for the remaining
+     * linked papers in this submission.
+     */
+    private void attachCalendarEvent(Paper paper, UUID studentId) {
+        try {
+            calendarEventService.attachStudentToPaperEvent(paper, studentId);
+        } catch (Exception e) {
+            log.error("Failed to attach student {} to calendar event for paper {} ('{}'): {}",
+                    studentId, paper.getId(), paper.getTitle(), e.getMessage(), e);
+        }
     }
 
     /**

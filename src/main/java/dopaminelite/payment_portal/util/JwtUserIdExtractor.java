@@ -21,8 +21,10 @@ public class JwtUserIdExtractor {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Extracts a user ID from the {@code sub}/{@code user_id}/{@code uid} claim of a
-     * {@code Bearer} JWT.
+     * Extracts a user ID from the {@code id}/{@code sub}/{@code user_id}/{@code uid} claim of a
+     * {@code Bearer} JWT. {@code id} is checked first — it's what the BFF's own
+     * {@code generateAccessToken} actually puts in the payload (see {@code auth.controller.ts});
+     * the others are kept as a fallback for any other token issuer.
      *
      * @param authorizationHeader the raw {@code Authorization} header value, may be null
      * @return the extracted UUID, or empty if the header is missing/malformed or has no
@@ -44,7 +46,9 @@ public class JwtUserIdExtractor {
             JsonNode payload = objectMapper.readTree(payloadBytes);
 
             String candidate = null;
-            if (payload.hasNonNull("sub")) {
+            if (payload.hasNonNull("id")) {
+                candidate = payload.get("id").asText();
+            } else if (payload.hasNonNull("sub")) {
                 candidate = payload.get("sub").asText();
             } else if (payload.hasNonNull("user_id")) {
                 candidate = payload.get("user_id").asText();

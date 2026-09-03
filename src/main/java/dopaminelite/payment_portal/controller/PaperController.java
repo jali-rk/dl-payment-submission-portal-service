@@ -1,11 +1,14 @@
 package dopaminelite.payment_portal.controller;
 
+import dopaminelite.payment_portal.dto.calendar.CalendarEventAttendeeAddRequest;
+import dopaminelite.payment_portal.dto.calendar.CalendarEventAttendeeDto;
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperWindowFilter;
+import dopaminelite.payment_portal.service.CalendarEventService;
 import dopaminelite.payment_portal.service.PaperService;
 import dopaminelite.payment_portal.util.JwtUserIdExtractor;
 import jakarta.validation.Valid;
@@ -14,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,6 +31,7 @@ public class PaperController {
     private static final UUID UNKNOWN_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     private final PaperService paperService;
+    private final CalendarEventService calendarEventService;
     private final JwtUserIdExtractor jwtUserIdExtractor;
 
     /**
@@ -131,6 +136,50 @@ public class PaperController {
     @DeleteMapping("/{paperId}")
     public ResponseEntity<Void> deletePaper(@PathVariable UUID paperId) {
         paperService.deletePaper(paperId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Lists the admin/main_admin users explicitly attached to a paper's shared calendar event.
+     * Instructors are never listed here — they see every paper's event automatically and are
+     * never represented as attendee rows.
+     *
+     * @param paperId the UUID of the paper
+     * @return the current attendee list
+     */
+    @GetMapping("/{paperId}/event-attendees")
+    public ResponseEntity<List<CalendarEventAttendeeDto>> listEventAttendees(@PathVariable UUID paperId) {
+        return ResponseEntity.ok(calendarEventService.listAttendees(paperId));
+    }
+
+    /**
+     * Attaches an admin/main_admin to a paper's shared calendar event, idempotently.
+     *
+     * @param paperId the UUID of the paper
+     * @param request the user to attach, plus a display snapshot resolved by the BFF
+     * @param authorizationHeader the caller's bearer token, used to attribute who added them
+     * @return the attendee record with HTTP 201 status
+     */
+    @PostMapping("/{paperId}/event-attendees")
+    public ResponseEntity<CalendarEventAttendeeDto> addEventAttendee(
+            @PathVariable UUID paperId,
+            @Valid @RequestBody CalendarEventAttendeeAddRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        UUID adminId = jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(UNKNOWN_ADMIN_ID);
+        CalendarEventAttendeeDto response = calendarEventService.addAdminAttendee(paperId, request, adminId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /**
+     * Detaches a user from a paper's shared calendar event.
+     *
+     * @param paperId the UUID of the paper
+     * @param userId the UUID of the user to remove
+     */
+    @DeleteMapping("/{paperId}/event-attendees/{userId}")
+    public ResponseEntity<Void> removeEventAttendee(@PathVariable UUID paperId, @PathVariable UUID userId) {
+        calendarEventService.removeAdminAttendee(paperId, userId);
         return ResponseEntity.noContent().build();
     }
 

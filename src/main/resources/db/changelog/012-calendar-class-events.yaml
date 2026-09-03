@@ -1,0 +1,69 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-calendar-class-events
+      author: copilot
+      changes:
+        - addColumn:
+            tableName: calendar_events
+            columns:
+              - column:
+                  name: is_global
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: calendar_event_classes
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: event_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: class_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: class_name
+                  type: varchar(255)
+        - addForeignKeyConstraint:
+            constraintName: fk_calendar_event_class_event
+            baseTableName: calendar_event_classes
+            baseColumnNames: event_id
+            referencedTableName: calendar_events
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: calendar_event_classes
+            columnNames: event_id, class_id
+            constraintName: uq_calendar_event_classes_event_class
+        - createIndex:
+            tableName: calendar_event_classes
+            indexName: idx_calendar_event_classes_class_id
+            columns:
+              - column:
+                  name: class_id

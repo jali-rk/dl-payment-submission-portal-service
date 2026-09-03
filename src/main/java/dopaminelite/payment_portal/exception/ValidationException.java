@@ -78,4 +78,69 @@ public class ValidationException extends RuntimeException {
         ));
     }
 
+    /**
+     * Factory method for when a PATCH/DELETE is attempted on a {@code PAPER}-sourced calendar
+     * event, which is always backend-managed and never user-editable.
+     *
+     * @param eventId the event whose edit/delete was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException calendarEventNotUserManaged(UUID eventId) {
+        return new ValidationException(String.format(
+            "Calendar event %s is system-managed and cannot be edited or deleted directly",
+            eventId
+        ));
+    }
+
+    /**
+     * Factory method for when a caller attempts to edit/delete a {@code USER} calendar event
+     * they don't own.
+     *
+     * @param eventId the event whose edit/delete was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException calendarEventNotOwnedByCaller(UUID eventId) {
+        return new ValidationException(String.format(
+            "Calendar event %s does not belong to the caller",
+            eventId
+        ));
+    }
+
+    /**
+     * Factory method for when a caller who isn't a MAIN_ADMIN attempts to edit/delete a
+     * {@code CLASS}-sourced calendar event.
+     *
+     * @param eventId the event whose edit/delete was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException calendarEventNotManageableByCaller(UUID eventId) {
+        return new ValidationException(String.format(
+            "Calendar event %s can only be edited or deleted by a main admin",
+            eventId
+        ));
+    }
+
+    /**
+     * Factory method for a scheduled-class event request that's neither global nor scoped to
+     * any class, or that's both at once.
+     *
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException classEventAudienceInvalid() {
+        return new ValidationException(
+            "A scheduled class event must be either global, or scoped to at least one class — not both, not neither"
+        );
+    }
+
+    /**
+     * Factory method for when a calendar event's color isn't one of the fixed preset palette
+     * values.
+     *
+     * @param color the rejected color value
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException invalidCalendarEventColor(String color) {
+        return new ValidationException("Invalid calendar event color: " + color);
+    }
+
 }

@@ -39,6 +39,7 @@ public class PaperService {
     private final PaperMarkRepository paperMarkRepository;
     private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
+    private final CalendarEventService calendarEventService;
 
     /**
      * Retrieves a paginated list of papers with optional filtering.
@@ -102,6 +103,7 @@ public class PaperService {
         }
 
         Paper savedPaper = paperRepository.save(paper);
+        calendarEventService.createPaperEvent(savedPaper);
         return paperMapper.toResponse(savedPaper);
     }
 
@@ -171,6 +173,7 @@ public class PaperService {
         }
 
         Paper updatedPaper = paperRepository.save(paper);
+        calendarEventService.syncPaperDates(paperId, updatedPaper.getStartDate(), updatedPaper.getEndDate());
         return paperMapper.toResponse(updatedPaper);
     }
 

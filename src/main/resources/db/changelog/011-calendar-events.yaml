@@ -1,0 +1,151 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-calendar-events
+      author: copilot
+      changes:
+        - createTable:
+            tableName: calendar_events
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: owner_id
+                  type: uuid
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: start_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: all_day
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: color
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_type
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_paper_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            constraintName: fk_calendar_event_paper
+            baseTableName: calendar_events
+            baseColumnNames: source_paper_id
+            referencedTableName: papers
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: calendar_events
+            columnNames: source_paper_id
+            constraintName: uq_calendar_events_source_paper
+        - createIndex:
+            tableName: calendar_events
+            indexName: idx_calendar_events_owner_id
+            columns:
+              - column:
+                  name: owner_id
+        - createTable:
+            tableName: calendar_event_attendees
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: event_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: varchar(255)
+              - column:
+                  name: full_name
+                  type: varchar(255)
+              - column:
+                  name: role
+                  type: varchar(50)
+              - column:
+                  name: added_by_user_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            constraintName: fk_calendar_event_attendee_event
+            baseTableName: calendar_event_attendees
+            baseColumnNames: event_id
+            referencedTableName: calendar_events
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: calendar_event_attendees
+            columnNames: event_id, user_id
+            constraintName: uq_calendar_event_attendees_event_user
+        - createIndex:
+            tableName: calendar_event_attendees
+            indexName: idx_calendar_event_attendees_user_id
+            columns:
+              - column:
+                  name: user_id
