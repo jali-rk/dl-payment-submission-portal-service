@@ -33,6 +33,7 @@ public class PaperMarkMapper {
         response.setStructuredMarks(mark.getStructuredMarks());
         response.setEssayMarks(mark.getEssayMarks());
         response.setTotalMarks(mark.getTotalMarks());
+        response.setRank(mark.getRank());
         response.setEnteredByInstructorId(mark.getEnteredByInstructorId());
         response.setLastUpdatedByInstructorId(mark.getLastUpdatedByInstructorId());
         response.setCreatedAt(mark.getCreatedAt());

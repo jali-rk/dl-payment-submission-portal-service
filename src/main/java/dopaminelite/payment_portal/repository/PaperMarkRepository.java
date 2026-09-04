@@ -83,4 +83,15 @@ public interface PaperMarkRepository extends JpaRepository<PaperMark, UUID> {
      */
     Optional<PaperMark> findByPaperIdAndStudentIdAndRankIsNotNull(UUID paperId, UUID studentId);
 
+    /**
+     * Every mark recorded for a student, across all papers, newest paper first — backs the
+     * unified academic profile's "all of this student's papers" view. Eagerly fetches the
+     * owning paper so sorting by its start date and reading its ID never trigger a lazy load.
+     *
+     * @param studentId the student's ID
+     * @return the student's marks, most recent paper first; empty if they have none yet
+     */
+    @Query("SELECT m FROM PaperMark m JOIN FETCH m.paper WHERE m.studentId = :studentId ORDER BY m.paper.startDate DESC")
+    List<PaperMark> findByStudentId(@Param("studentId") UUID studentId);
+
 }

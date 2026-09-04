@@ -77,6 +77,20 @@ public class PaperMarkService {
     }
 
     /**
+     * Every mark recorded for a student, across all papers — backs the unified academic
+     * profile's "all of this student's papers" view. Empty, not an error, for a student with no
+     * marks yet.
+     *
+     * @param studentId the student's ID
+     * @return the student's marks, most recent paper first
+     */
+    public List<PaperMarkResponse> listMarksForStudent(UUID studentId) {
+        return paperMarkRepository.findByStudentId(studentId).stream()
+                .map(paperMarkMapper::toResponse)
+                .toList();
+    }
+
+    /**
      * Live lookup an instructor's UI can call as a student code number is typed, before
      * submitting the full marks form — confirms the student exists and whether they already
      * have a mark on this paper.
