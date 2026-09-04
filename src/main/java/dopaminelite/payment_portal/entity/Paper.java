@@ -62,21 +62,24 @@ public class Paper extends AuditableEntity {
      * not need to relate to each other or sum to anything. Once any {@link PaperMark} exists
      * for this paper, all three become immutable (see {@code PaperService.updateMarkScheme}).
      */
-    @Column(name = "mcq_max_marks", precision = 6, scale = 3)
+    // precision=9 matches MarkSchemeDto's raised ceiling (up to 100000, 6 integer digits) plus
+    // 3 fraction digits. See changelog 015-widen-mark-precision for the matching DB migration -
+    // this annotation alone doesn't alter the already-created column.
+    @Column(name = "mcq_max_marks", precision = 9, scale = 3)
     private BigDecimal mcqMaxMarks;
 
     /**
      * Maximum mark for this paper's Structured section, or null if the paper has no such
      * section. See {@link #mcqMaxMarks} for the independence/locking rules that also apply here.
      */
-    @Column(name = "structured_max_marks", precision = 6, scale = 3)
+    @Column(name = "structured_max_marks", precision = 9, scale = 3)
     private BigDecimal structuredMaxMarks;
 
     /**
      * Maximum mark for this paper's Essay section, or null if the paper has no such section.
      * See {@link #mcqMaxMarks} for the independence/locking rules that also apply here.
      */
-    @Column(name = "essay_max_marks", precision = 6, scale = 3)
+    @Column(name = "essay_max_marks", precision = 9, scale = 3)
     private BigDecimal essayMaxMarks;
 
     /**

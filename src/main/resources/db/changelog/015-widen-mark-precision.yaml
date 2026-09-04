@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-widen-mark-precision
+      author: claude
+      comment: >
+        Section max-marks and section scores (MCQ/Structured/Essay) were numeric(6,3), which
+        only holds up to 999.999 - too narrow now that a paper's mark scheme is allowed values
+        well above 100. Widened to numeric(9,3) (up to 999999.999), matching the app-level
+        safety cap of 100000. total_marks on paper_marks is deliberately untouched: it stays a
+        separate, always-out-of-100 figure, unrelated to the section maximums.
+      changes:
+        - modifyDataType:
+            tableName: papers
+            columnName: mcq_max_marks
+            newDataType: numeric(9,3)
+        - modifyDataType:
+            tableName: papers
+            columnName: structured_max_marks
+            newDataType: numeric(9,3)
+        - modifyDataType:
+            tableName: papers
+            columnName: essay_max_marks
+            newDataType: numeric(9,3)
+        - modifyDataType:
+            tableName: paper_marks
+            columnName: mcq_marks
+            newDataType: numeric(9,3)
+        - modifyDataType:
+            tableName: paper_marks
+            columnName: structured_marks
+            newDataType: numeric(9,3)
+        - modifyDataType:
+            tableName: paper_marks
+            columnName: essay_marks
+            newDataType: numeric(9,3)
