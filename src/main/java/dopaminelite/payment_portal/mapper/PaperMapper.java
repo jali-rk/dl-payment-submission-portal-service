@@ -37,6 +37,8 @@ public class PaperMapper {
         response.setCreatedAt(paper.getCreatedAt());
         response.setUpdatedAt(paper.getUpdatedAt());
         response.setMarkScheme(toMarkScheme(paper));
+        response.setLeaderboardPublished(paper.isLeaderboardPublished());
+        response.setLeaderboardLastGeneratedAt(paper.getLeaderboardLastGeneratedAt());
 
         List<PortalRefDto> linkedPortals = paper.getLinkedPortals().stream()
                 .map(this::toPortalRef)

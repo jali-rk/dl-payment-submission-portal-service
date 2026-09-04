@@ -75,4 +75,18 @@ public class PaperMark extends AuditableEntity {
     @Column(name = "last_updated_by_instructor_id", nullable = false)
     private UUID lastUpdatedByInstructorId;
 
+    /**
+     * This student's rank on the paper's leaderboard as of the last "Generate Ranks" run, or
+     * null if ranks have never been generated for this paper (or this mark was added after the
+     * most recent generation). Standard competition ranking — tied {@link #totalMarks} share a
+     * rank, the next distinct value skips accordingly. Never touched by create/update/delete —
+     * only the explicit generate operation writes this, which is what lets the leaderboard go
+     * stale between generations.
+     *
+     * <p>Mapped to column {@code leaderboard_rank} rather than {@code rank} since {@code RANK}
+     * has special meaning in SQL (a window function), sidestepping any reserved-word friction.
+     */
+    @Column(name = "leaderboard_rank")
+    private Integer rank;
+
 }

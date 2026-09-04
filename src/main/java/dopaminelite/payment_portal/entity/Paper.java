@@ -6,6 +6,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -77,5 +78,30 @@ public class Paper extends AuditableEntity {
      */
     @Column(name = "essay_max_marks", precision = 6, scale = 3)
     private BigDecimal essayMaxMarks;
+
+    /**
+     * Whether this paper's leaderboard is currently visible to students. Instructors/admins/
+     * main admins can always see the leaderboard regardless of this flag. Named without an
+     * "is" prefix to keep the Lombok-generated {@code isLeaderboardPublished()}/
+     * {@code setLeaderboardPublished()} accessors unambiguous, matching the same convention
+     * already used for {@code CalendarEvent.global}.
+     */
+    @Column(name = "leaderboard_published", nullable = false)
+    private boolean leaderboardPublished = false;
+
+    /**
+     * When ranks were last (re)computed via the explicit "Generate Ranks" action, or null if
+     * that has never happened. Marks may be added/edited/deleted freely without changing this —
+     * the leaderboard only reflects the state at this timestamp until regenerated again.
+     */
+    @Column(name = "leaderboard_last_generated_at")
+    private LocalDateTime leaderboardLastGeneratedAt;
+
+    /**
+     * UUID of the instructor/admin/main admin who last pressed "Generate Ranks", or null if
+     * that has never happened.
+     */
+    @Column(name = "leaderboard_last_generated_by")
+    private UUID leaderboardLastGeneratedBy;
 
 }

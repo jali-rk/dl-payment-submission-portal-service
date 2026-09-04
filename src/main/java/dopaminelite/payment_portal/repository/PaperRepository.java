@@ -52,4 +52,13 @@ public interface PaperRepository extends JpaRepository<Paper, UUID> {
             Pageable pageable
     );
 
+    /**
+     * Finds papers whose leaderboard is currently published — backs student-facing leaderboard
+     * discovery.
+     *
+     * @param pageable pagination information
+     * @return a page of papers with a published leaderboard, most recently started first
+     */
+    Page<Paper> findByLeaderboardPublishedTrueOrderByStartDateDesc(Pageable pageable);
+
 }

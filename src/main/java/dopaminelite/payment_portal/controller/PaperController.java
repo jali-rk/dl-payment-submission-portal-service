@@ -59,6 +59,27 @@ public class PaperController {
     }
 
     /**
+     * Lists papers whose leaderboard is currently published. Backs student-facing leaderboard
+     * discovery — students have no other way to browse papers.
+     *
+     * @param limit maximum number of results per page, defaults to 20
+     * @param offset number of results to skip, defaults to 0
+     * @return paginated list of papers with a published leaderboard
+     */
+    @GetMapping("/leaderboards/published")
+    public ResponseEntity<PaginatedResponse<PaperResponse>> listPublishedLeaderboardPapers(
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "0") int offset
+    ) {
+        if (limit < 1 || limit > 100) {
+            limit = 20;
+        }
+
+        PaginatedResponse<PaperResponse> response = paperService.listPublishedLeaderboardPapers(limit, offset);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * Creates a new paper.
      *
      * @param request the paper creation request

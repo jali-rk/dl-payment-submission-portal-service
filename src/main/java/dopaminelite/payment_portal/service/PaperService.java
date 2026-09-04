@@ -63,6 +63,26 @@ public class PaperService {
     }
 
     /**
+     * Retrieves a paginated list of papers whose leaderboard is currently published — backs
+     * student-facing leaderboard discovery, since students otherwise have no way to browse
+     * papers at all.
+     *
+     * @param limit maximum number of results per page
+     * @param offset number of results to skip
+     * @return paginated response containing paper list and total count
+     */
+    public PaginatedResponse<PaperResponse> listPublishedLeaderboardPapers(int limit, int offset) {
+        Pageable pageable = PageRequest.of(offset / limit, limit);
+        Page<Paper> paperPage = paperRepository.findByLeaderboardPublishedTrueOrderByStartDateDesc(pageable);
+
+        List<PaperResponse> items = paperPage.getContent().stream()
+                .map(paperMapper::toResponse)
+                .toList();
+
+        return new PaginatedResponse<>(items, paperPage.getTotalElements());
+    }
+
+    /**
      * Retrieves a paper by its ID.
      *
      * @param id the paper ID

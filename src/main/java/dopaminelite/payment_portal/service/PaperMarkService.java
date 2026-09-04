@@ -2,6 +2,10 @@ package dopaminelite.payment_portal.service;
 
 import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.external.StudentLookupDto;
+import dopaminelite.payment_portal.dto.paper.LeaderboardEntryDto;
+import dopaminelite.payment_portal.dto.paper.LeaderboardVisibilityUpdateRequest;
+import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
+import dopaminelite.payment_portal.dto.paper.PaperLeaderboardResponse;
 import dopaminelite.payment_portal.dto.paper.PaperMarkCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperMarkResponse;
 import dopaminelite.payment_portal.dto.paper.PaperMarkUpdateRequest;
@@ -23,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +43,11 @@ public class PaperMarkService {
 
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
+
+    /** Page used when building a leaderboard response for the generate/publish write endpoints,
+     * which don't take their own pagination params — the caller re-fetches the leaderboard
+     * separately if they need more than the first page. */
+    private static final Pageable DEFAULT_LEADERBOARD_PAGE = PageRequest.of(0, 50);
 
     private final PaperMarkRepository paperMarkRepository;
     private final PaperRepository paperRepository;
@@ -198,6 +208,131 @@ public class PaperMarkService {
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
 
         paperMarkRepository.delete(mark);
+    }
+
+    /**
+     * Retrieves a page of a paper's leaderboard: its publish state, when it was last generated,
+     * a page of the ranked entries as of that generation, and the caller's own ranked entry
+     * (independent of paging, so they never have to hunt for it across pages). A STUDENT (or
+     * unrecognized/absent role) is only allowed to see it once published — instructors/admins/
+     * main admins can always see it, hidden or not, mirroring {@code CalendarEventService}'s
+     * existing role-based visibility pattern for papers/instructors.
+     *
+     * @param paperId the paper's ID
+     * @param callerRole the caller's role, as forwarded by the BFF
+     * @param callerId the caller's ID, or null if it couldn't be determined
+     * @param limit maximum number of entries per page
+     * @param offset number of entries to skip
+     * @return the leaderboard page
+     * @throws ResourceNotFoundException if no paper exists with the given ID, or if the caller
+     *         isn't privileged and the leaderboard isn't published (treated as not existing,
+     *         to avoid leaking who's ranked to an unauthorized viewer)
+     */
+    public PaperLeaderboardResponse getLeaderboard(UUID paperId, String callerRole, UUID callerId, int limit, int offset) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        if (!paper.isLeaderboardPublished() && !isPrivilegedForLeaderboard(callerRole)) {
+            throw new ResourceNotFoundException("Leaderboard not published for paper: " + paperId);
+        }
+
+        return toLeaderboardResponse(paper, callerId, PageRequest.of(offset / limit, limit));
+    }
+
+    /**
+     * Recomputes leaderboard ranks for every mark currently recorded on a paper, using standard
+     * competition ranking on {@link PaperMark#getTotalMarks()} (tied students share a rank; the
+     * next distinct value skips accordingly). Marks added, edited, or deleted after this call
+     * are not reflected on the leaderboard until it's generated again.
+     *
+     * @param paperId the paper's ID
+     * @param callerId the ID of the instructor/admin/main admin generating ranks
+     * @return the refreshed leaderboard
+     * @throws ResourceNotFoundException if no paper exists with the given ID
+     * @throws ValidationException if the paper has no marks recorded yet
+     */
+    @Transactional
+    public PaperLeaderboardResponse generateRanks(UUID paperId, UUID callerId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        List<PaperMark> marks = paperMarkRepository.findByPaperIdOrderByTotalMarksDesc(paperId);
+        if (marks.isEmpty()) {
+            throw ValidationException.noMarksToGenerateRanksFor(paperId);
+        }
+
+        BigDecimal previousMarks = null;
+        int currentRank = 0;
+        for (int position = 0; position < marks.size(); position++) {
+            PaperMark mark = marks.get(position);
+            if (previousMarks == null || mark.getTotalMarks().compareTo(previousMarks) != 0) {
+                currentRank = position + 1;
+                previousMarks = mark.getTotalMarks();
+            }
+            mark.setRank(currentRank);
+        }
+        paperMarkRepository.saveAll(marks);
+
+        paper.setLeaderboardLastGeneratedAt(LocalDateTime.now());
+        paper.setLeaderboardLastGeneratedBy(callerId);
+        Paper savedPaper = paperRepository.save(paper);
+
+        return toLeaderboardResponse(savedPaper, null, DEFAULT_LEADERBOARD_PAGE);
+    }
+
+    /**
+     * Publishes or hides a paper's leaderboard. Publishing is rejected until ranks have been
+     * generated at least once — there would otherwise be nothing meaningful to show.
+     *
+     * @param paperId the paper's ID
+     * @param request the new visibility state
+     * @return the updated leaderboard
+     * @throws ResourceNotFoundException if no paper exists with the given ID
+     * @throws ValidationException if attempting to publish before ranks have ever been generated
+     */
+    @Transactional
+    public PaperLeaderboardResponse setLeaderboardVisibility(UUID paperId, LeaderboardVisibilityUpdateRequest request) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        if (request.isPublished() && paper.getLeaderboardLastGeneratedAt() == null) {
+            throw ValidationException.leaderboardNotGeneratedYet(paperId);
+        }
+
+        paper.setLeaderboardPublished(request.isPublished());
+        Paper savedPaper = paperRepository.save(paper);
+
+        return toLeaderboardResponse(savedPaper, null, DEFAULT_LEADERBOARD_PAGE);
+    }
+
+    private boolean isPrivilegedForLeaderboard(String callerRole) {
+        return "INSTRUCTOR".equalsIgnoreCase(callerRole)
+                || "ADMIN".equalsIgnoreCase(callerRole)
+                || "MAIN_ADMIN".equalsIgnoreCase(callerRole);
+    }
+
+    private PaperLeaderboardResponse toLeaderboardResponse(Paper paper, UUID callerId, Pageable pageable) {
+        Page<PaperMark> page = paperMarkRepository.findByPaperIdAndRankIsNotNullOrderByRankAscIdAsc(paper.getId(), pageable);
+        List<LeaderboardEntryDto> entries = page.getContent().stream()
+                .map(paperMarkMapper::toLeaderboardEntry)
+                .toList();
+
+        LeaderboardEntryDto callerEntry = callerId == null ? null : paperMarkRepository
+                .findByPaperIdAndStudentIdAndRankIsNotNull(paper.getId(), callerId)
+                .map(paperMarkMapper::toLeaderboardEntry)
+                .orElse(null);
+
+        PaperLeaderboardResponse response = new PaperLeaderboardResponse();
+        response.setPaperId(paper.getId());
+        response.setPaperTitle(paper.getTitle());
+        response.setMarkScheme(new MarkSchemeDto(paper.getMcqMaxMarks(), paper.getStructuredMaxMarks(), paper.getEssayMaxMarks()));
+        response.setPublished(paper.isLeaderboardPublished());
+        response.setLastGeneratedAt(paper.getLeaderboardLastGeneratedAt());
+        response.setLastGeneratedByInstructorId(paper.getLeaderboardLastGeneratedBy());
+        response.setEntries(entries);
+        response.setTotal(page.getTotalElements());
+        response.setCallerEntry(callerEntry);
+        return response;
     }
 
     private void requirePaperExists(UUID paperId) {

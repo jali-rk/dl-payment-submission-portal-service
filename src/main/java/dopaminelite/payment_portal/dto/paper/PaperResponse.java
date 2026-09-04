@@ -36,6 +36,17 @@ public class PaperResponse {
      */
     private MarkSchemeDto markScheme;
 
+    /**
+     * Whether this paper's leaderboard is currently visible to students. Instructors/admins/
+     * main admins can always see it regardless of this flag.
+     */
+    private boolean leaderboardPublished;
+
+    /**
+     * When ranks were last (re)computed via "Generate Ranks", or null if never generated.
+     */
+    private LocalDateTime leaderboardLastGeneratedAt;
+
     private UUID createdByAdminId;
 
     private LocalDateTime createdAt;

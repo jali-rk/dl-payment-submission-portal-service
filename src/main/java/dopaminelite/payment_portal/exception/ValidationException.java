@@ -143,4 +143,29 @@ public class ValidationException extends RuntimeException {
         return new ValidationException("Invalid calendar event color: " + color);
     }
 
+    /**
+     * Factory method for when "Generate Ranks" is pressed on a paper with no marks recorded.
+     *
+     * @param paperId the paper whose rank generation was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException noMarksToGenerateRanksFor(UUID paperId) {
+        return new ValidationException(
+            "Cannot generate ranks for paper " + paperId + ": no marks have been recorded yet"
+        );
+    }
+
+    /**
+     * Factory method for when a MAIN_ADMIN attempts to publish a paper's leaderboard before
+     * ranks have ever been generated for it.
+     *
+     * @param paperId the paper whose publish attempt was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException leaderboardNotGeneratedYet(UUID paperId) {
+        return new ValidationException(
+            "Cannot publish the leaderboard for paper " + paperId + ": ranks have not been generated yet"
+        );
+    }
+
 }
