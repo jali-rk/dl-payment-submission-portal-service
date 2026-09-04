@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-paper-marks
+      author: copilot
+      changes:
+        - createTable:
+            tableName: paper_marks
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: paper_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_code_number
+                  type: varchar(50)
+              - column:
+                  name: student_full_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_whatsapp_number
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mcq_marks
+                  type: numeric(6,3)
+              - column:
+                  name: structured_marks
+                  type: numeric(6,3)
+              - column:
+                  name: essay_marks
+                  type: numeric(6,3)
+              - column:
+                  name: total_marks
+                  type: numeric(6,3)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: entered_by_instructor_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_updated_by_instructor_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_mark_paper
+            baseTableName: paper_marks
+            baseColumnNames: paper_id
+            referencedTableName: papers
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: paper_marks
+            columnNames: paper_id, student_id
+            constraintName: uq_paper_marks_paper_student
+        - createIndex:
+            tableName: paper_marks
+            indexName: idx_paper_marks_student_id
+            columns:
+              - column:
+                  name: student_id

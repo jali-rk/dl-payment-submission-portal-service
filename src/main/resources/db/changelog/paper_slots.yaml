@@ -1,0 +1,65 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-paper-slots
+      author: copilot
+      changes:
+        - createTable:
+            tableName: paper_slots
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: paper_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payment_submission_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: qr_token
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: consumed_at
+                  type: timestamp(6)
+              - column:
+                  name: consumed_by_instructor_id
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_slot_paper
+            baseTableName: paper_slots
+            baseColumnNames: paper_id
+            referencedTableName: papers
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_slot_submission
+            baseTableName: paper_slots
+            baseColumnNames: payment_submission_id
+            referencedTableName: payment_submissions
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: paper_slots
+            columnNames: paper_id, payment_submission_id
+            constraintName: uq_paper_slots_paper_submission
+        - createIndex:
+            tableName: paper_slots
+            indexName: idx_paper_slots_payment_submission_id
+            columns:
+              - column:
+                  name: payment_submission_id

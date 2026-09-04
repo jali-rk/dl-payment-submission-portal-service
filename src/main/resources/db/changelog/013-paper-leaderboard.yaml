@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-paper-leaderboard
+      author: copilot
+      changes:
+        - addColumn:
+            tableName: papers
+            columns:
+              - column:
+                  name: leaderboard_published
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: leaderboard_last_generated_at
+                  type: timestamp(6)
+              - column:
+                  name: leaderboard_last_generated_by
+                  type: uuid
+        - addColumn:
+            tableName: paper_marks
+            columns:
+              - column:
+                  name: leaderboard_rank
+                  type: integer
+        - createIndex:
+            tableName: paper_marks
+            indexName: idx_paper_marks_paper_id_leaderboard_rank
+            columns:
+              - column:
+                  name: paper_id
+              - column:
+                  name: leaderboard_rank

@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-add-paper-mark-scheme
+      author: copilot
+      changes:
+        - addColumn:
+            tableName: papers
+            columns:
+              - column:
+                  name: mcq_max_marks
+                  type: numeric(6,3)
+              - column:
+                  name: structured_max_marks
+                  type: numeric(6,3)
+              - column:
+                  name: essay_max_marks
+                  type: numeric(6,3)

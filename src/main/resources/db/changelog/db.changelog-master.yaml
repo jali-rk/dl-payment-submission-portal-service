@@ -7,3 +7,23 @@ databaseChangeLog:
       file: db/changelog/uploaded_files.yaml
   - include:
       file: db/changelog/004-add-student-snapshot.yaml
+  - include:
+      file: db/changelog/papers.yaml
+  - include:
+      file: db/changelog/paper_payment_portals.yaml
+  - include:
+      file: db/changelog/paper_slots.yaml
+  - include:
+      file: db/changelog/paper_slot_creation_results.yaml
+  - include:
+      file: db/changelog/009-add-paper-mark-scheme.yaml
+  - include:
+      file: db/changelog/paper_marks.yaml
+  - include:
+      file: db/changelog/011-calendar-events.yaml
+  - include:
+      file: db/changelog/012-calendar-class-events.yaml
+  - include:
+      file: db/changelog/013-paper-leaderboard.yaml
+  - include:
+      file: db/changelog/014-calendar-class-link.yaml
