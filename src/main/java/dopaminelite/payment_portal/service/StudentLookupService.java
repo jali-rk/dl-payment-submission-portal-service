@@ -2,6 +2,7 @@ package dopaminelite.payment_portal.service;
 
 import dopaminelite.payment_portal.dto.external.BffObjectResponse;
 import dopaminelite.payment_portal.dto.external.StudentLookupDto;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -52,6 +54,19 @@ public class StudentLookupService {
     }
 
     /**
+     * Logs the resolved BFF URL (and whether a service token is even configured) once at
+     * startup — deliberately at INFO so it shows up in normal deployed logs without needing
+     * debug level enabled. A misconfigured {@code bff.base-url}/{@code bff.internal-service-token}
+     * (e.g. still defaulting to {@code http://localhost:3000}, or an empty token) is otherwise
+     * invisible until the first real student lookup fails with an opaque 500.
+     */
+    @PostConstruct
+    void logResolvedConfig() {
+        logger.info("StudentLookupService: resolved bff.base-url={}, internal-service-token configured={}",
+                bffBaseUrl, internalServiceToken != null && !internalServiceToken.isBlank());
+    }
+
+    /**
      * Looks up a student by their exact code number.
      *
      * @param codeNumber the student's code number, as typed by the instructor
@@ -82,6 +97,16 @@ public class StudentLookupService {
         } catch (HttpClientErrorException.NotFound e) {
             logger.debug("No student found for code number: {}", codeNumber);
             return Optional.empty();
+        } catch (RestClientException e) {
+            // Deliberately still rethrown uncaught (see class javadoc) — this is only about
+            // making the cause visible in logs before it surfaces as a generic 500, instead of
+            // an ops person having nothing to go on but "an unexpected error occurred". A 401/403
+            // here almost always means bff.internal-service-token doesn't match the BFF's own
+            // INTERNAL_SERVICE_TOKEN; a connection failure almost always means bff.base-url
+            // isn't reachable from this service in this environment.
+            logger.error("StudentLookupService: BFF call failed calling {} (bff.base-url={}): {}",
+                    url, bffBaseUrl, e.getMessage());
+            throw e;
         }
     }
 
