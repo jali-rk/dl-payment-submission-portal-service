@@ -28,16 +28,18 @@ public class PaperMarkCreateRequest {
     @NotBlank(message = "Student code number is required")
     private String studentCodeNumber;
 
+    // integer=6, matching MarkSchemeDto's raised ceiling: a section's actual recorded score
+    // can be as large as its paper's configured max, which is no longer capped at 3 digits.
     @DecimalMin(value = "0.0", message = "MCQ marks must not be negative")
-    @Digits(integer = 3, fraction = 3, message = "MCQ marks supports up to 3 decimal places")
+    @Digits(integer = 6, fraction = 3, message = "MCQ marks supports up to 3 decimal places")
     private BigDecimal mcqMarks;
 
     @DecimalMin(value = "0.0", message = "Structured marks must not be negative")
-    @Digits(integer = 3, fraction = 3, message = "Structured marks supports up to 3 decimal places")
+    @Digits(integer = 6, fraction = 3, message = "Structured marks supports up to 3 decimal places")
     private BigDecimal structuredMarks;
 
     @DecimalMin(value = "0.0", message = "Essay marks must not be negative")
-    @Digits(integer = 3, fraction = 3, message = "Essay marks supports up to 3 decimal places")
+    @Digits(integer = 6, fraction = 3, message = "Essay marks supports up to 3 decimal places")
     private BigDecimal essayMarks;
 
     @NotNull(message = "Total marks is required")
