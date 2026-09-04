@@ -31,6 +31,7 @@ public class CalendarEventMapper {
         response.setOwnerId(event.getOwnerId());
         response.setTitle(event.getTitle());
         response.setDescription(event.getDescription());
+        response.setClassLink(event.getClassLink());
         response.setStartAt(event.getStartAt());
         response.setEndAt(event.getEndAt());
         response.setAllDay(event.isAllDay());

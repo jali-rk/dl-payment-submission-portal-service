@@ -144,6 +144,16 @@ public class ValidationException extends RuntimeException {
     }
 
     /**
+     * Factory method for when a scheduled class's meeting link isn't a well-formed http(s) URL.
+     *
+     * @param classLink the rejected value
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException invalidCalendarEventClassLink(String classLink) {
+        return new ValidationException("Class link must be a valid http(s) URL: " + classLink);
+    }
+
+    /**
      * Factory method for when "Generate Ranks" is pressed on a paper with no marks recorded.
      *
      * @param paperId the paper whose rank generation was rejected

@@ -19,6 +19,9 @@ public class CalendarEventUpdateRequest {
 
     private String description;
 
+    /** Only meaningful for {@code CLASS} events; ignored otherwise. */
+    private String classLink;
+
     private LocalDateTime startAt;
 
     private LocalDateTime endAt;

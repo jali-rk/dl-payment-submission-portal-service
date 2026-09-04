@@ -23,6 +23,9 @@ public class CalendarEventResponse {
 
     private String description;
 
+    /** Only meaningful for {@code CLASS} events. */
+    private String classLink;
+
     private LocalDateTime startAt;
 
     private LocalDateTime endAt;

@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-calendar-class-link
+      author: copilot
+      changes:
+        - addColumn:
+            tableName: calendar_events
+            columns:
+              - column:
+                  name: class_link
+                  type: varchar(2048)

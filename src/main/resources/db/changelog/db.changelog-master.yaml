@@ -25,3 +25,5 @@ databaseChangeLog:
       file: db/changelog/012-calendar-class-events.yaml
   - include:
       file: db/changelog/013-paper-leaderboard.yaml
+  - include:
+      file: db/changelog/014-calendar-class-link.yaml

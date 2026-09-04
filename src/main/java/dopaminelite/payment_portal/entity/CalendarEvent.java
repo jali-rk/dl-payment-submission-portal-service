@@ -78,4 +78,14 @@ public class CalendarEvent extends AuditableEntity {
     @Column(name = "is_global", nullable = false)
     private boolean global;
 
+    /**
+     * The meeting link for a scheduled class (e.g. a Zoom URL), shown prominently and clickable
+     * in the event details. Optional, and only ever set on {@code CLASS} events today — named
+     * {@code classLink} rather than {@code link} to avoid clashing with the unrelated
+     * event-to-class association ({@link CalendarEventClass}) already called "link" throughout
+     * this codebase.
+     */
+    @Column(name = "class_link", length = 2048)
+    private String classLink;
+
 }

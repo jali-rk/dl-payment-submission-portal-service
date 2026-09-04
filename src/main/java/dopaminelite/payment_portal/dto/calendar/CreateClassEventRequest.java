@@ -26,6 +26,9 @@ public class CreateClassEventRequest {
 
     private String description;
 
+    /** The class's meeting link (e.g. Zoom), shown prominently and clickable in event details. */
+    private String classLink;
+
     @NotNull(message = "Start time is required")
     private LocalDateTime startAt;
 

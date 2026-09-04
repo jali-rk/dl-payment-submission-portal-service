@@ -23,6 +23,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -163,6 +165,9 @@ public class CalendarEventService {
         if (request.getDescription() != null) {
             event.setDescription(request.getDescription());
         }
+        if (request.getClassLink() != null) {
+            event.setClassLink(normalizeClassLink(request.getClassLink()));
+        }
         if (request.getStartAt() != null) {
             event.setStartAt(request.getStartAt());
         }
@@ -218,6 +223,38 @@ public class CalendarEventService {
         if (!USER_COLOR_PALETTE.contains(color)) {
             throw ValidationException.invalidCalendarEventColor(color);
         }
+    }
+
+    /**
+     * Validates a class link is a well-formed, browsable URL — just enough to catch typos
+     * before they end up in front of students as a dead "Join Class" button, not full URL
+     * validation — and collapses a blank value to {@code null} ("no link").
+     *
+     * <p>Blank-to-{@code null} normalization happens here rather than being left to the
+     * caller specifically so {@link #updateEvent} can clear an existing link: its PATCH
+     * semantics treat a {@code null} field on the *request* as "not provided, don't touch",
+     * so a request field that's merely blank (e.g. the caller cleared a text input, which
+     * naturally serializes as {@code ""} rather than omitting the field) must still normalize
+     * to an actual {@code null} being written to the entity, or the old link would silently
+     * survive.
+     *
+     * @param classLink the raw value from the request, or null
+     * @return the trimmed link, or null if blank
+     */
+    private String normalizeClassLink(String classLink) {
+        if (classLink == null || classLink.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = new URI(classLink.trim());
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme) || uri.getHost() == null) {
+                throw ValidationException.invalidCalendarEventClassLink(classLink);
+            }
+        } catch (URISyntaxException e) {
+            throw ValidationException.invalidCalendarEventClassLink(classLink);
+        }
+        return classLink.trim();
     }
 
     private void validateRange(LocalDateTime startAt, LocalDateTime endAt) {
@@ -334,6 +371,7 @@ public class CalendarEventService {
         event.setOwnerId(createdByAdminId);
         event.setTitle(request.getTitle());
         event.setDescription(request.getDescription());
+        event.setClassLink(normalizeClassLink(request.getClassLink()));
         event.setStartAt(request.getStartAt());
         event.setEndAt(request.getEndAt());
         event.setAllDay(request.isAllDay());
