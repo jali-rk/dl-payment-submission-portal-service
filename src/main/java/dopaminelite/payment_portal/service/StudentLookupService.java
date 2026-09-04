@@ -40,30 +40,38 @@ public class StudentLookupService {
     private static final Logger logger = LoggerFactory.getLogger(StudentLookupService.class);
     private static final String SERVICE_NAME = "payment-portal-service";
 
+    /**
+     * TEMPORARY HARDCODE (2026-09-05): the {@code bff.internal-service-token} property
+     * (backed by the {@code INTERNAL_SERVICE_TOKEN} env var / Secrets Manager reference)
+     * resolves blank in this service's deployed dev environment despite ECS showing it
+     * correctly wired to a confirmed non-empty secret value — root cause not confirmed. This
+     * bypasses that resolution path entirely and hardcodes the same shared placeholder value
+     * BFF and user-service already use in this environment, to unblock instructor mark entry.
+     * Revert to reading {@code bff.internal-service-token} via {@code @Value} once the
+     * underlying env-var resolution issue is found and fixed.
+     */
+    private static final String INTERNAL_SERVICE_TOKEN = "change-me-in-production";
+
     private final RestTemplate restTemplate;
     private final String bffBaseUrl;
-    private final String internalServiceToken;
 
     public StudentLookupService(
             RestTemplate bffRestTemplate,
-            @Value("${bff.base-url}") String bffBaseUrl,
-            @Value("${bff.internal-service-token:}") String internalServiceToken) {
+            @Value("${bff.base-url}") String bffBaseUrl) {
         this.restTemplate = bffRestTemplate;
         this.bffBaseUrl = bffBaseUrl;
-        this.internalServiceToken = internalServiceToken;
     }
 
     /**
-     * Logs the resolved BFF URL (and whether a service token is even configured) once at
-     * startup — deliberately at INFO so it shows up in normal deployed logs without needing
-     * debug level enabled. A misconfigured {@code bff.base-url}/{@code bff.internal-service-token}
-     * (e.g. still defaulting to {@code http://localhost:3000}, or an empty token) is otherwise
-     * invisible until the first real student lookup fails with an opaque 500.
+     * Logs the resolved BFF URL once at startup — deliberately at INFO so it shows up in
+     * normal deployed logs without needing debug level enabled. A misconfigured
+     * {@code bff.base-url} (e.g. still defaulting to {@code http://localhost:3000}) is
+     * otherwise invisible until the first real student lookup fails with an opaque 500.
      */
     @PostConstruct
     void logResolvedConfig() {
-        logger.info("StudentLookupService: resolved bff.base-url={}, internal-service-token configured={}",
-                bffBaseUrl, internalServiceToken != null && !internalServiceToken.isBlank());
+        logger.info("StudentLookupService: resolved bff.base-url={}, internal-service-token=HARDCODED (temporary, see class javadoc)",
+                bffBaseUrl);
     }
 
     /**
@@ -81,7 +89,7 @@ public class StudentLookupService {
                 .toUriString();
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Service-Token", internalServiceToken);
+        headers.set("X-Service-Token", INTERNAL_SERVICE_TOKEN);
         headers.set("X-Service-Name", SERVICE_NAME);
 
         try {
