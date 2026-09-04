@@ -41,19 +41,22 @@ public class PaperMark extends AuditableEntity {
     /**
      * Mark for the paper's MCQ section, or null if the paper has no MCQ section enabled.
      */
-    @Column(name = "mcq_marks", precision = 6, scale = 3)
+    // precision=9, matching Paper.mcqMaxMarks's raised ceiling - a recorded score can be as
+    // large as its paper's configured max. totalMarks below is deliberately left at 6/100:
+    // it's a separate, always-out-of-100 figure, not tied to the section maximums.
+    @Column(name = "mcq_marks", precision = 9, scale = 3)
     private BigDecimal mcqMarks;
 
     /**
      * Mark for the paper's Structured section, or null if not enabled on the paper.
      */
-    @Column(name = "structured_marks", precision = 6, scale = 3)
+    @Column(name = "structured_marks", precision = 9, scale = 3)
     private BigDecimal structuredMarks;
 
     /**
      * Mark for the paper's Essay section, or null if not enabled on the paper.
      */
-    @Column(name = "essay_marks", precision = 6, scale = 3)
+    @Column(name = "essay_marks", precision = 9, scale = 3)
     private BigDecimal essayMarks;
 
     /**
