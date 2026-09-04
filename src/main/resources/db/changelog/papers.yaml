@@ -1,0 +1,61 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-papers
+      author: copilot
+      changes:
+        - createTable:
+            tableName: papers
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              - column:
+                  name: created_by_admin_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+              - column:
+                  name: title
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: start_date
+                  type: date
+                  constraints:
+                    nullable: false
+              - column:
+                  name: end_date
+                  type: date
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: papers
+            indexName: idx_papers_start_end_date
+            columns:
+              - column:
+                  name: start_date
+              - column:
+                  name: end_date
