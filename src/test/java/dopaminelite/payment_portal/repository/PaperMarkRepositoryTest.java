@@ -142,4 +142,32 @@ class PaperMarkRepositoryTest {
         assertThat(page.getContent().get(0).getPaper().getId()).isEqualTo(paper.getId());
     }
 
+    @Test
+    @DisplayName("findByStudentId returns a student's marks across every paper, eagerly fetching each paper")
+    void findByStudentId_returnsMarksAcrossPapers() {
+        Paper otherPaper = new Paper();
+        otherPaper.setTitle("Other Paper");
+        otherPaper.setStartDate(LocalDate.now().minusDays(10));
+        otherPaper.setEndDate(LocalDate.now().minusDays(9));
+        entityManager.persist(otherPaper);
+
+        entityManager.persist(newMark(paper, studentId));
+        entityManager.persist(newMark(otherPaper, studentId));
+        entityManager.persist(newMark(paper, UUID.randomUUID())); // a different student on `paper`
+        entityManager.flush();
+        entityManager.clear();
+
+        var marks = paperMarkRepository.findByStudentId(studentId);
+
+        assertThat(marks).hasSize(2);
+        assertThat(marks).extracting(m -> m.getPaper().getId())
+                .containsExactlyInAnyOrder(paper.getId(), otherPaper.getId());
+    }
+
+    @Test
+    @DisplayName("findByStudentId returns an empty list for a student with no marks")
+    void findByStudentId_emptyForStudentWithNoMarks() {
+        assertThat(paperMarkRepository.findByStudentId(UUID.randomUUID())).isEmpty();
+    }
+
 }

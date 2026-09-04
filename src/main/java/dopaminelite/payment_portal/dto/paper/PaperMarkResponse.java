@@ -32,6 +32,8 @@ public class PaperMarkResponse {
 
     private BigDecimal totalMarks;
 
+    private Integer rank;
+
     private UUID enteredByInstructorId;
 
     private UUID lastUpdatedByInstructorId;
