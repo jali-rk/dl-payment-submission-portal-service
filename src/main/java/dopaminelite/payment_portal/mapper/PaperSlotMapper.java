@@ -45,6 +45,7 @@ public class PaperSlotMapper {
         response.setPaperId(slot.getPaper().getId());
         response.setPaperTitle(slot.getPaper().getTitle());
         response.setSubmissionId(submission.getId());
+        response.setPaymentStatus(submission.getStatus());
         response.setStudentId(submission.getStudentId());
         response.setStudent(submissionMapper.toStudentSnapshotDto(submission.getStudentSnapshot()));
         response.setPortal(new PortalRefDto(submission.getPortal().getId(), submission.getPortal().getDisplayName()));
