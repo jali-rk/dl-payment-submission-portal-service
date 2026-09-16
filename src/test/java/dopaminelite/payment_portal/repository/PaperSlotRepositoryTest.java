@@ -6,6 +6,7 @@ import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.StudentSnapshot;
+import dopaminelite.payment_portal.entity.enums.PaperWritingMode;
 import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -164,6 +165,149 @@ class PaperSlotRepositoryTest {
 
         var byStudentCode = paperSlotRepository.findByFilters(null, null, "STU-001", null, today, pageable);
         assertThat(byStudentCode.getTotalElements()).isEqualTo(1);
+    }
+
+    private PaymentSubmission submissionWith(PaperWritingMode mode, String centerId, String codeNumber) {
+        StudentSnapshot snapshot = new StudentSnapshot();
+        snapshot.setFullName("Student " + codeNumber);
+        snapshot.setEmail(codeNumber.toLowerCase() + "@example.com");
+        snapshot.setWhatsappNumber("0770000000");
+        snapshot.setAddress("123 Test Street");
+        snapshot.setCodeNumber(codeNumber);
+        snapshot.setPaperWritingMode(mode);
+        snapshot.setPaperCenterId(centerId);
+
+        PaymentSubmission sub = new PaymentSubmission();
+        sub.setStudentId(UUID.randomUUID());
+        sub.setPortal(portal);
+        sub.setStatus(SubmissionStatus.APPROVED);
+        sub.setPortalNameAtSubmission(portal.getDisplayName());
+        sub.setStudentSnapshot(snapshot);
+        entityManager.persist(sub);
+        return sub;
+    }
+
+    private void slotFor(PaymentSubmission sub, LocalDateTime consumedAt) {
+        PaperSlot slot = new PaperSlot();
+        slot.setPaper(paper);
+        slot.setPaymentSubmission(sub);
+        slot.setConsumedAt(consumedAt);
+        entityManager.persist(slot);
+    }
+
+    @Test
+    @DisplayName("aggregateAttendanceByCenter groups opened/attended counts by center, excluding non-PHYSICAL students")
+    void aggregateAttendanceByCenter_groupsCorrectly() {
+        String colomboId = UUID.randomUUID().toString();
+        String kandyId = UUID.randomUUID().toString();
+
+        PaymentSubmission colomboAttended = submissionWith(PaperWritingMode.PHYSICAL, colomboId, "STU-A");
+        PaymentSubmission colomboAbsent = submissionWith(PaperWritingMode.PHYSICAL, colomboId, "STU-B");
+        PaymentSubmission kandyAbsent = submissionWith(PaperWritingMode.PHYSICAL, kandyId, "STU-C");
+        PaymentSubmission onlineStudent = submissionWith(PaperWritingMode.ONLINE, null, "STU-D");
+        PaymentSubmission noCenter = submissionWith(PaperWritingMode.PHYSICAL, null, "STU-E");
+
+        slotFor(colomboAttended, LocalDateTime.now());
+        slotFor(colomboAbsent, null);
+        slotFor(kandyAbsent, null);
+        slotFor(onlineStudent, null);
+        slotFor(noCenter, null);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<PaperSlotRepository.CenterAttendanceAggregate> rows =
+                paperSlotRepository.aggregateAttendanceByCenter(paper.getId(), PaperWritingMode.PHYSICAL);
+
+        // Only PHYSICAL students counted (4), grouped into 3 buckets: Colombo, Kandy, null.
+        assertThat(rows).hasSize(3);
+
+        var colomboRow = rows.stream().filter(r -> colomboId.equals(r.getCenterId())).findFirst().orElseThrow();
+        assertThat(colomboRow.getOpened()).isEqualTo(2L);
+        assertThat(colomboRow.getAttended()).isEqualTo(1L);
+
+        var kandyRow = rows.stream().filter(r -> kandyId.equals(r.getCenterId())).findFirst().orElseThrow();
+        assertThat(kandyRow.getOpened()).isEqualTo(1L);
+        assertThat(kandyRow.getAttended()).isEqualTo(0L);
+
+        var nullRow = rows.stream().filter(r -> r.getCenterId() == null).findFirst().orElseThrow();
+        assertThat(nullRow.getOpened()).isEqualTo(1L);
+
+        long totalOpened = rows.stream().mapToLong(PaperSlotRepository.CenterAttendanceAggregate::getOpened).sum();
+        assertThat(totalOpened).isEqualTo(4L); // the ONLINE student's slot is excluded entirely
+    }
+
+    @Test
+    @DisplayName("findAttendanceStudents: null centerId matches everyone, 'UNASSIGNED' matches only no-center students, else exact match")
+    void findAttendanceStudents_centerIdModes() {
+        String colomboId = UUID.randomUUID().toString();
+        PaymentSubmission withCenter = submissionWith(PaperWritingMode.PHYSICAL, colomboId, "STU-A");
+        PaymentSubmission withoutCenter = submissionWith(PaperWritingMode.PHYSICAL, null, "STU-B");
+
+        slotFor(withCenter, null);
+        slotFor(withoutCenter, null);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        var everyone = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, pageable);
+        assertThat(everyone.getTotalElements()).isEqualTo(2);
+
+        var unassignedBucket = paperSlotRepository.findAttendanceStudents(paper.getId(), "UNASSIGNED", null, pageable);
+        assertThat(unassignedBucket.getTotalElements()).isEqualTo(1);
+        assertThat(unassignedBucket.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
+                .isEqualTo("STU-B");
+
+        var colomboBucket = paperSlotRepository.findAttendanceStudents(paper.getId(), colomboId, null, pageable);
+        assertThat(colomboBucket.getTotalElements()).isEqualTo(1);
+        assertThat(colomboBucket.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
+                .isEqualTo("STU-A");
+    }
+
+    @Test
+    @DisplayName("findAttendanceStudents: ONLINE students are excluded entirely, even with no center filter")
+    void findAttendanceStudents_excludesOnlineStudents() {
+        PaymentSubmission physicalSub = submissionWith(PaperWritingMode.PHYSICAL, null, "STU-A");
+        PaymentSubmission onlineSub = submissionWith(PaperWritingMode.ONLINE, null, "STU-B");
+
+        slotFor(physicalSub, null);
+        slotFor(onlineSub, null);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+        var results = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, pageable);
+
+        assertThat(results.getTotalElements()).isEqualTo(1);
+        assertThat(results.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
+                .isEqualTo("STU-A");
+    }
+
+    @Test
+    @DisplayName("findAttendanceStudents: attended filter matches only consumed/unconsumed slots as requested")
+    void findAttendanceStudents_attendedFilter() {
+        PaymentSubmission attendedSub = submissionWith(PaperWritingMode.PHYSICAL, null, "STU-A");
+        PaymentSubmission absentSub = submissionWith(PaperWritingMode.PHYSICAL, null, "STU-B");
+
+        slotFor(attendedSub, LocalDateTime.now());
+        slotFor(absentSub, null);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        var attendedOnly = paperSlotRepository.findAttendanceStudents(paper.getId(), null, true, pageable);
+        assertThat(attendedOnly.getTotalElements()).isEqualTo(1);
+        assertThat(attendedOnly.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
+                .isEqualTo("STU-A");
+
+        var absentOnly = paperSlotRepository.findAttendanceStudents(paper.getId(), null, false, pageable);
+        assertThat(absentOnly.getTotalElements()).isEqualTo(1);
+        assertThat(absentOnly.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
+                .isEqualTo("STU-B");
+
+        var both = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, pageable);
+        assertThat(both.getTotalElements()).isEqualTo(2);
     }
 
 }
