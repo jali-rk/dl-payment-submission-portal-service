@@ -196,6 +196,20 @@ class PaperAttendanceControllerTest {
     }
 
     @Test
+    @DisplayName("GET .../attendance/by-center - a UUID-shaped id that matches no center at all (active or deleted) shows 'Unknown Center', not the raw UUID")
+    void getByCenterSummary_orphanedUuidShowsUnknownCenterLabel() throws Exception {
+        paper = createPaper();
+        String orphanedId = UUID.randomUUID().toString();
+        PaymentSubmission orphaned = createSubmission(PaperWritingMode.PHYSICAL, orphanedId, "STU-H", "Student H");
+        createSlot(paper, orphaned, null);
+
+        mockMvc.perform(get("/papers/{paperId}/attendance/by-center", paper.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + orphanedId + "')].paperCenterName").value("Unknown Center"))
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + orphanedId + "')].opened").value(1));
+    }
+
+    @Test
     @DisplayName("GET .../attendance/by-center - a soft-deleted center's historical rows show its real name, not a raw UUID, and don't get a zero-row of their own")
     void getByCenterSummary_resolvesDeletedCenterNameWithoutAddingAPlaceholderRow() throws Exception {
         String deletedCenterId = UUID.randomUUID().toString();
