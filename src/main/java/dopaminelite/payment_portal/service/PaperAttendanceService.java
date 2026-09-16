@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,11 +58,20 @@ public class PaperAttendanceService {
     /**
      * Builds the per-center attendance breakdown for a paper: every currently-active paper
      * center appears as a row (even with zero slots for this paper), plus any center key found
-     * in the slot data that didn't resolve to an active center - which covers both genuinely
-     * unknown/soft-deleted centers and the known legacy bug where some rows hold a center name
-     * in place of its ID (see {@code PaymentSubmissionRepository.findByAdminFilters}'s Javadoc
-     * for the same workaround elsewhere). Rows with no center recorded at all are grouped under
+     * in the slot data that didn't resolve to an active center at all - which covers genuinely
+     * unknown/soft-deleted centers. Rows with no center recorded at all are grouped under
      * "Not specified".
+     *
+     * <p>Both dl-user-service (where {@code users.paper_center} is meant to hold a name but has
+     * been observed holding the center's raw UUID for some students) and this service's own
+     * snapshot (where {@code student_paper_center_id} is meant to hold a UUID but has been
+     * observed holding the center's name for others - see {@code
+     * PaymentSubmissionRepository.findByAdminFilters}'s Javadoc for the same issue elsewhere)
+     * have this id/name mix-up, in either direction, depending on when a given row was written.
+     * Grouping by the raw key alone would therefore split one physical center's true totals
+     * across two identically-named rows - one reached via its id, the other via its name. Every
+     * raw key is resolved to a canonical center id first (via {@link #canonicalCenterKey}) and
+     * merged before any row is built, so both variants always land in the same row.
      *
      * @param paperId the paper to summarize
      * @return the per-center rows plus a grand-totals row
@@ -73,26 +83,33 @@ public class PaperAttendanceService {
         List<PaperSlotRepository.CenterAttendanceAggregate> aggregates =
                 paperSlotRepository.aggregateAttendanceByCenter(paperId, PaperWritingMode.PHYSICAL);
 
-        Map<String, long[]> countsByCenterKey = new LinkedHashMap<>();
+        // Active centers decide which zero-slot placeholder rows appear; the full (active +
+        // deleted) map is only for resolving/merging raw keys, so a since-deleted center with
+        // real historical data still gets its actual name instead of an empty row of its own.
+        Map<String, String> activeCenterNames = paperCenterService.getActivePaperCenterNameMap();
+        Map<String, String> allCenterNames = paperCenterService.getAllPaperCenterNameMap();
+        Map<String, String> centerIdsByName = invertCenterNames(allCenterNames);
+
+        Map<String, long[]> countsByCanonicalKey = new LinkedHashMap<>();
         for (PaperSlotRepository.CenterAttendanceAggregate aggregate : aggregates) {
-            countsByCenterKey.put(aggregate.getCenterId(),
-                    new long[]{aggregate.getOpened(), aggregate.getAttended()});
+            String canonicalKey = canonicalCenterKey(aggregate.getCenterId(), allCenterNames, centerIdsByName);
+            long[] counts = countsByCanonicalKey.computeIfAbsent(canonicalKey, k -> new long[2]);
+            counts[0] += aggregate.getOpened();
+            counts[1] += aggregate.getAttended();
         }
 
-        Map<String, String> centerNames = paperCenterService.getPaperCenterNameMap();
-
         List<PaperCenterAttendanceRowDto> rows = new ArrayList<>();
-        centerNames.forEach((centerId, centerName) ->
-                rows.add(toRow(centerId, centerName, countsByCenterKey.remove(centerId))));
+        activeCenterNames.forEach((centerId, centerName) ->
+                rows.add(toRow(centerId, centerName, countsByCanonicalKey.remove(centerId))));
 
-        // Anything left didn't match an active center: a legacy name-in-ID-column row, a
-        // soft-deleted center, or students with no center recorded (null key) at all - the
-        // latter is surfaced as UNASSIGNED_CENTER_KEY, a real filterable value, not null.
-        countsByCenterKey.forEach((centerKey, counts) -> {
-            boolean isUnassigned = centerKey == null || centerKey.isBlank();
-            String resolvedId = isUnassigned ? UNASSIGNED_CENTER_KEY : centerKey;
-            String displayName = isUnassigned ? NOT_SPECIFIED_LABEL : centerKey;
-            rows.add(toRow(resolvedId, displayName, counts));
+        // Anything left is either a soft-deleted center with real historical data (resolve its
+        // actual name via allCenterNames), a genuinely unknown key, or "no center recorded"
+        // (surfaced as UNASSIGNED_CENTER_KEY, a real filterable value, not null) - every row
+        // that matched an active center by either id or name was already merged above.
+        countsByCanonicalKey.forEach((centerKey, counts) -> {
+            boolean isUnassigned = UNASSIGNED_CENTER_KEY.equals(centerKey);
+            String displayName = isUnassigned ? NOT_SPECIFIED_LABEL : allCenterNames.getOrDefault(centerKey, centerKey);
+            rows.add(toRow(centerKey, displayName, counts));
         });
 
         rows.sort(Comparator.comparing(PaperCenterAttendanceRowDto::getPaperCenterName, String.CASE_INSENSITIVE_ORDER));
@@ -111,6 +128,13 @@ public class PaperAttendanceService {
      * exactly that row's students; omitting {@code centerId} returns every student regardless
      * of center.
      *
+     * <p>When {@code centerId} is a real active center's id, matching also needs to catch rows
+     * that were snapshotted with that center's <em>name</em> instead (see {@link
+     * #getByCenterSummary}'s Javadoc) - the resolved name is looked up here and passed to the
+     * repository as an alternate value to match, so a row like a summary row's student count
+     * never appears to be missing students just because of which format that row happened to
+     * be written in.
+     *
      * @param paperId the paper to list attendance for
      * @param centerId null for no center filter, {@link #UNASSIGNED_CENTER_KEY} for students
      *        with no center recorded, else an exact raw center key
@@ -124,12 +148,16 @@ public class PaperAttendanceService {
             UUID paperId, String centerId, Boolean attended, int limit, int offset) {
         requirePaper(paperId);
 
-        Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<PaperSlot> page = paperSlotRepository.findAttendanceStudents(paperId, centerId, attended, pageable);
+        Map<String, String> allCenterNames = paperCenterService.getAllPaperCenterNameMap();
+        Map<String, String> centerIdsByName = invertCenterNames(allCenterNames);
+        String centerIdAlternate = centerId != null ? allCenterNames.get(centerId) : null;
 
-        Map<String, String> centerNames = paperCenterService.getPaperCenterNameMap();
+        Pageable pageable = PageRequest.of(offset / limit, limit);
+        Page<PaperSlot> page = paperSlotRepository.findAttendanceStudents(
+                paperId, centerId, centerIdAlternate, attended, pageable);
+
         List<PaperCenterAttendanceStudentDto> items = page.getContent().stream()
-                .map(slot -> toStudentDto(slot, centerNames))
+                .map(slot -> toStudentDto(slot, allCenterNames, centerIdsByName))
                 .toList();
 
         return new PaginatedResponse<>(items, page.getTotalElements());
@@ -140,6 +168,29 @@ public class PaperAttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
     }
 
+    private Map<String, String> invertCenterNames(Map<String, String> centerNames) {
+        Map<String, String> centerIdsByName = new HashMap<>();
+        centerNames.forEach((id, name) -> centerIdsByName.put(name, id));
+        return centerIdsByName;
+    }
+
+    /**
+     * Resolves a raw {@code student_paper_center_id} value to a canonical center id: itself if
+     * it's already a real active center's id; that center's id if it's actually the center's
+     * name (the known id/name mix-up - see {@link #getByCenterSummary}); {@link
+     * #UNASSIGNED_CENTER_KEY} if blank/null; otherwise the raw value itself, as its own
+     * unresolvable bucket (an unknown or soft-deleted center).
+     */
+    private String canonicalCenterKey(String rawKey, Map<String, String> centerNames, Map<String, String> centerIdsByName) {
+        if (rawKey == null || rawKey.isBlank()) {
+            return UNASSIGNED_CENTER_KEY;
+        }
+        if (centerNames.containsKey(rawKey)) {
+            return rawKey;
+        }
+        return centerIdsByName.getOrDefault(rawKey, rawKey);
+    }
+
     private PaperCenterAttendanceRowDto toRow(String centerId, String centerName, long[] counts) {
         long opened = counts == null ? 0 : counts[0];
         long attended = counts == null ? 0 : counts[1];
@@ -148,17 +199,18 @@ public class PaperAttendanceService {
         return new PaperCenterAttendanceRowDto(centerId, centerName, opened, attended, absent, rate);
     }
 
-    private PaperCenterAttendanceStudentDto toStudentDto(PaperSlot slot, Map<String, String> centerNames) {
+    private PaperCenterAttendanceStudentDto toStudentDto(
+            PaperSlot slot, Map<String, String> centerNames, Map<String, String> centerIdsByName) {
         StudentSnapshot snapshot = slot.getPaymentSubmission().getStudentSnapshot();
-        String rawCenterId = snapshot.getPaperCenterId();
-        boolean isUnassigned = rawCenterId == null || rawCenterId.isBlank();
+        String canonicalId = canonicalCenterKey(snapshot.getPaperCenterId(), centerNames, centerIdsByName);
+        boolean isUnassigned = UNASSIGNED_CENTER_KEY.equals(canonicalId);
 
         return new PaperCenterAttendanceStudentDto(
                 slot.getPaymentSubmission().getStudentId(),
                 snapshot.getCodeNumber(),
                 snapshot.getFullName(),
-                isUnassigned ? UNASSIGNED_CENTER_KEY : rawCenterId,
-                isUnassigned ? NOT_SPECIFIED_LABEL : centerNames.getOrDefault(rawCenterId, rawCenterId),
+                canonicalId,
+                isUnassigned ? NOT_SPECIFIED_LABEL : centerNames.getOrDefault(canonicalId, canonicalId),
                 slot.getConsumedAt() != null,
                 slot.getConsumedAt()
         );

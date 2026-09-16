@@ -76,10 +76,12 @@ class PaperAttendanceControllerTest {
 
     @BeforeEach
     void setUp() {
-        when(paperCenterService.getPaperCenterNameMap()).thenReturn(Map.of(
+        Map<String, String> activeCenters = Map.of(
                 COLOMBO_ID, "Colombo Main Center",
                 KANDY_ID, "Kandy Central Hall"
-        ));
+        );
+        when(paperCenterService.getActivePaperCenterNameMap()).thenReturn(activeCenters);
+        when(paperCenterService.getAllPaperCenterNameMap()).thenReturn(activeCenters);
 
         PaymentPortal newPortal = new PaymentPortal();
         newPortal.setMonth(10);
@@ -173,6 +175,51 @@ class PaperAttendanceControllerTest {
     }
 
     @Test
+    @DisplayName("GET .../attendance/by-center - rows snapshotted with a center's name merge into that same center's row, not a duplicate")
+    void getByCenterSummary_mergesNameStoredRowsIntoTheSameActiveCenter() throws Exception {
+        paper = createPaper();
+        // One student's row correctly holds Colombo's id; another's holds "Colombo Main Center"
+        // (its exact name) instead - the real upstream data-quality issue reported against this
+        // feature. Both must count toward ONE "Colombo Main Center" row, not two.
+        PaymentSubmission byId = createSubmission(PaperWritingMode.PHYSICAL, COLOMBO_ID, "STU-A", "Student A");
+        PaymentSubmission byName = createSubmission(PaperWritingMode.PHYSICAL, "Colombo Main Center", "STU-B", "Student B");
+
+        createSlot(paper, byId, LocalDateTime.now());
+        createSlot(paper, byName, null);
+
+        mockMvc.perform(get("/papers/{paperId}/attendance/by-center", paper.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.centers[?(@.paperCenterName == 'Colombo Main Center')]", hasSize(1)))
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + COLOMBO_ID + "')].opened").value(2))
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + COLOMBO_ID + "')].attended").value(1))
+                .andExpect(jsonPath("$.totals.opened").value(2));
+    }
+
+    @Test
+    @DisplayName("GET .../attendance/by-center - a soft-deleted center's historical rows show its real name, not a raw UUID, and don't get a zero-row of their own")
+    void getByCenterSummary_resolvesDeletedCenterNameWithoutAddingAPlaceholderRow() throws Exception {
+        String deletedCenterId = UUID.randomUUID().toString();
+        Map<String, String> allCenters = new java.util.HashMap<>(Map.of(
+                COLOMBO_ID, "Colombo Main Center",
+                KANDY_ID, "Kandy Central Hall"
+        ));
+        allCenters.put(deletedCenterId, "Retired Study Hall");
+        when(paperCenterService.getAllPaperCenterNameMap()).thenReturn(allCenters);
+        // getActivePaperCenterNameMap keeps the @BeforeEach stub - the deleted center is absent from it.
+
+        paper = createPaper();
+        PaymentSubmission atDeletedCenter = createSubmission(PaperWritingMode.PHYSICAL, deletedCenterId, "STU-G", "Student G");
+        createSlot(paper, atDeletedCenter, null);
+
+        mockMvc.perform(get("/papers/{paperId}/attendance/by-center", paper.getId()))
+                .andExpect(status().isOk())
+                // Resolved by name, not left as the raw UUID:
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + deletedCenterId + "')].paperCenterName").value("Retired Study Hall"))
+                // Exactly one row for it - no separate zero-slot placeholder also appears:
+                .andExpect(jsonPath("$.centers[?(@.paperCenterId == '" + deletedCenterId + "')]", hasSize(1)));
+    }
+
+    @Test
     @DisplayName("GET .../attendance/by-center - legacy name-in-ID-column rows surface as their own bucket instead of vanishing")
     void getByCenterSummary_legacyNameAsIdBucket() throws Exception {
         paper = createPaper();
@@ -227,6 +274,24 @@ class PaperAttendanceControllerTest {
                 .andExpect(jsonPath("$.items[?(@.codeNumber == 'STU-B')].attended").value(false))
                 .andExpect(jsonPath("$.items[?(@.codeNumber == 'STU-A')].paperCenterId").value(COLOMBO_ID))
                 .andExpect(jsonPath("$.items[?(@.codeNumber == 'STU-A')].paperCenterName").value("Colombo Main Center"));
+    }
+
+    @Test
+    @DisplayName("GET .../attendance/students - filtering by a center's id also catches students whose row holds its name instead")
+    void getStudents_centerFilterCatchesNameStoredRowsToo() throws Exception {
+        paper = createPaper();
+        PaymentSubmission byId = createSubmission(PaperWritingMode.PHYSICAL, COLOMBO_ID, "STU-A", "Student A");
+        PaymentSubmission byName = createSubmission(PaperWritingMode.PHYSICAL, "Colombo Main Center", "STU-B", "Student B");
+
+        createSlot(paper, byId, null);
+        createSlot(paper, byName, null);
+
+        mockMvc.perform(get("/papers/{paperId}/attendance/students", paper.getId())
+                        .param("centerId", COLOMBO_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.items[?(@.codeNumber == 'STU-B')].paperCenterId").value(COLOMBO_ID))
+                .andExpect(jsonPath("$.items[?(@.codeNumber == 'STU-B')].paperCenterName").value("Colombo Main Center"));
     }
 
     @Test
