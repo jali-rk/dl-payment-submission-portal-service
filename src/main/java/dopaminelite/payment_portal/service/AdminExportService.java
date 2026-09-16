@@ -65,7 +65,7 @@ public class AdminExportService {
                 portalId, status, studyMedium, paperCenterId, columns);
 
         // Fetch paper center name map (used for both filtering and display)
-        Map<String, String> paperCenterNameMap = paperCenterService.getPaperCenterNameMap();
+        Map<String, String> paperCenterNameMap = paperCenterService.getActivePaperCenterNameMap();
 
         // WORKAROUND: See PaymentSubmissionService for full explanation. Legacy rows store paper center
         // name instead of UUID, so we match on both. Not ideal but no alternative at the given time.

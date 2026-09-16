@@ -159,7 +159,7 @@ public class PaymentSubmissionService {
         // TODO: Remove once upstream ensures paperCenterId always contains a valid UUID.
         String paperCenterName = null;
         if (paperCenterId != null) {
-            Map<String, String> paperCenterNameMap = paperCenterService.getPaperCenterNameMap();
+            Map<String, String> paperCenterNameMap = paperCenterService.getActivePaperCenterNameMap();
             paperCenterName = paperCenterNameMap.get(paperCenterId);
             log.debug("[SERVICE] Resolved paperCenterId '{}' to name '{}'", paperCenterId, paperCenterName);
         }

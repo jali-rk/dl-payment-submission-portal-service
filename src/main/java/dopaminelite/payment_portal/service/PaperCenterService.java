@@ -35,14 +35,34 @@ public class PaperCenterService {
     }
 
     /**
-     * Fetches all paper centers from BFF and returns a map of paper center ID to name.
+     * Fetches all currently-active paper centers from BFF and returns a map of paper center ID
+     * to name. Use this for deciding which centers deserve their own placeholder row (even with
+     * zero slots) - a deleted center shouldn't show up as an empty row for every paper.
      * If the BFF call fails, logs an error and returns an empty map.
      *
-     * @return Map of paper center ID to paper center name
+     * @return Map of active paper center ID to paper center name
      */
-    public Map<String, String> getPaperCenterNameMap() {
+    public Map<String, String> getActivePaperCenterNameMap() {
+        return fetchPaperCenterNameMap(false);
+    }
+
+    /**
+     * Fetches every paper center - active and soft-deleted alike - from BFF and returns a map
+     * of paper center ID to name. Use this to resolve/display the name behind a raw center key
+     * found in historical slot data, which may reference a center that has since been deleted;
+     * without this, such a row would fall back to showing its raw, unrecognizable UUID instead
+     * of the center's real (if now-retired) name.
+     * If the BFF call fails, logs an error and returns an empty map.
+     *
+     * @return Map of every paper center ID (active or deleted) to paper center name
+     */
+    public Map<String, String> getAllPaperCenterNameMap() {
+        return fetchPaperCenterNameMap(true);
+    }
+
+    private Map<String, String> fetchPaperCenterNameMap(boolean includeDeleted) {
         try {
-            String url = bffBaseUrl + "/paper-centers";
+            String url = bffBaseUrl + "/paper-centers?includeDeleted=" + includeDeleted;
             logger.debug("Fetching paper centers from BFF: {}", url);
 
             ResponseEntity<BffStandardResponse<PaperCenterDto>> response = restTemplate.exchange(
@@ -61,7 +81,7 @@ public class PaperCenterService {
                                     PaperCenterDto::getName,
                                     (existing, replacement) -> existing // handle duplicate keys
                             ));
-                    logger.info("Successfully fetched {} paper centers from BFF", paperCenterMap.size());
+                    logger.info("Successfully fetched {} paper centers from BFF (includeDeleted={})", paperCenterMap.size(), includeDeleted);
                     return paperCenterMap;
                 }
             }

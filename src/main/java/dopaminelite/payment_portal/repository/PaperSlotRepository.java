@@ -130,10 +130,17 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * {@code student_paper_center_id} string (see {@link #aggregateAttendanceByCenter}):
      * {@code null} (omitted) means no center filtering at all (every PHYSICAL student, any or no
      * center); the literal sentinel {@code "UNASSIGNED"} means students with no center recorded;
-     * any other value is matched exactly against that raw key.
+     * any other value is matched against that raw key, OR against {@code centerIdAlternate} if
+     * given - the caller resolves this to the same center's <em>name</em> when {@code centerId}
+     * is a real center's id, since some rows were snapshotted with the name instead of the id in
+     * that column (see {@code PaperAttendanceService.getByCenterSummary}'s Javadoc). Without this,
+     * filtering by a center's id would silently miss every student whose row happens to hold that
+     * center's name instead.
      *
      * @param paperId the paper to list attendance for
      * @param centerId null for no center filter, {@code "UNASSIGNED"} for no-center students, else an exact raw center key
+     * @param centerIdAlternate an additional raw value that also counts as a match (typically the
+     *        resolved center's name), or null if there's none to also check
      * @param attended null for no attendance filter, true/false to match consumed/unconsumed slots
      * @param pageable pagination information
      * @return a page of matching slots, with the submission eagerly fetched
@@ -144,7 +151,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "sub.studentSnapshot.paperWritingMode = dopaminelite.payment_portal.entity.enums.PaperWritingMode.PHYSICAL AND " +
            "(:centerId IS NULL OR " +
            "  (:centerId = 'UNASSIGNED' AND sub.studentSnapshot.paperCenterId IS NULL) OR " +
-           "  (:centerId <> 'UNASSIGNED' AND sub.studentSnapshot.paperCenterId = :centerId)) AND " +
+           "  (:centerId <> 'UNASSIGNED' AND (sub.studentSnapshot.paperCenterId = :centerId " +
+           "     OR (:centerIdAlternate IS NOT NULL AND sub.studentSnapshot.paperCenterId = :centerIdAlternate)))) AND " +
            "(:attended IS NULL OR " +
            "  (:attended = TRUE AND ps.consumedAt IS NOT NULL) OR " +
            "  (:attended = FALSE AND ps.consumedAt IS NULL)) " +
@@ -152,6 +160,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
     Page<PaperSlot> findAttendanceStudents(
             @Param("paperId") UUID paperId,
             @Param("centerId") String centerId,
+            @Param("centerIdAlternate") String centerIdAlternate,
             @Param("attended") Boolean attended,
             Pageable pageable
     );
