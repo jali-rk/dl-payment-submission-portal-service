@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Aggregates a paper's {@link PaperSlot} attendance by the physical paper center its students
@@ -42,6 +43,18 @@ public class PaperAttendanceService {
 
     private static final String NOT_SPECIFIED_LABEL = "Not specified";
     private static final String TOTALS_LABEL = "All centers";
+
+    /**
+     * Fallback label for a center key that looks like a UUID but doesn't resolve against any
+     * paper center - active or deleted - at all: it references a row that simply doesn't exist
+     * (e.g. an invalid/orphaned id), so showing the raw UUID as if it were a meaningful name
+     * would only confuse an admin. A non-UUID-shaped, unresolvable key is presumably already a
+     * legacy free-text name (see {@link #canonicalCenterKey}) and is still shown as-is.
+     */
+    private static final String UNKNOWN_CENTER_LABEL = "Unknown Center";
+
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
     /**
      * Sentinel {@code paperCenterId}/{@code centerId} value standing in for "no center
@@ -106,11 +119,8 @@ public class PaperAttendanceService {
         // actual name via allCenterNames), a genuinely unknown key, or "no center recorded"
         // (surfaced as UNASSIGNED_CENTER_KEY, a real filterable value, not null) - every row
         // that matched an active center by either id or name was already merged above.
-        countsByCanonicalKey.forEach((centerKey, counts) -> {
-            boolean isUnassigned = UNASSIGNED_CENTER_KEY.equals(centerKey);
-            String displayName = isUnassigned ? NOT_SPECIFIED_LABEL : allCenterNames.getOrDefault(centerKey, centerKey);
-            rows.add(toRow(centerKey, displayName, counts));
-        });
+        countsByCanonicalKey.forEach((centerKey, counts) ->
+                rows.add(toRow(centerKey, resolveDisplayName(centerKey, allCenterNames), counts)));
 
         rows.sort(Comparator.comparing(PaperCenterAttendanceRowDto::getPaperCenterName, String.CASE_INSENSITIVE_ORDER));
 
@@ -191,6 +201,25 @@ public class PaperAttendanceService {
         return centerIdsByName.getOrDefault(rawKey, rawKey);
     }
 
+    /**
+     * Resolves a canonical center key (from {@link #canonicalCenterKey}) to what to actually
+     * show a viewer: the real name if it resolves against any center (active or deleted); "Not
+     * specified" for {@link #UNASSIGNED_CENTER_KEY}; "Unknown Center" if it looks like a UUID
+     * but resolves to nothing at all (references a row that doesn't exist); otherwise the raw
+     * value itself, since an unresolvable non-UUID-shaped key is presumably already a legacy
+     * free-text center name and is informative as-is.
+     */
+    private String resolveDisplayName(String canonicalKey, Map<String, String> allCenterNames) {
+        if (UNASSIGNED_CENTER_KEY.equals(canonicalKey)) {
+            return NOT_SPECIFIED_LABEL;
+        }
+        String resolved = allCenterNames.get(canonicalKey);
+        if (resolved != null) {
+            return resolved;
+        }
+        return UUID_PATTERN.matcher(canonicalKey).matches() ? UNKNOWN_CENTER_LABEL : canonicalKey;
+    }
+
     private PaperCenterAttendanceRowDto toRow(String centerId, String centerName, long[] counts) {
         long opened = counts == null ? 0 : counts[0];
         long attended = counts == null ? 0 : counts[1];
@@ -203,14 +232,13 @@ public class PaperAttendanceService {
             PaperSlot slot, Map<String, String> centerNames, Map<String, String> centerIdsByName) {
         StudentSnapshot snapshot = slot.getPaymentSubmission().getStudentSnapshot();
         String canonicalId = canonicalCenterKey(snapshot.getPaperCenterId(), centerNames, centerIdsByName);
-        boolean isUnassigned = UNASSIGNED_CENTER_KEY.equals(canonicalId);
 
         return new PaperCenterAttendanceStudentDto(
                 slot.getPaymentSubmission().getStudentId(),
                 snapshot.getCodeNumber(),
                 snapshot.getFullName(),
                 canonicalId,
-                isUnassigned ? NOT_SPECIFIED_LABEL : centerNames.getOrDefault(canonicalId, canonicalId),
+                resolveDisplayName(canonicalId, centerNames),
                 slot.getConsumedAt() != null,
                 slot.getConsumedAt()
         );
