@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -38,6 +39,13 @@ public class PaperSlotResponse {
      * instructor's scan screen can show it explicitly rather than the instructor having to
      * take that on faith.
      */
+    /**
+     * The last day this slot can be scanned. Usually the paper-event's end date, but later when
+     * a subsequent payment extended the window for the same paper rather than issuing a second
+     * QR code — so this, not the paper's own end date, is what the holder can rely on.
+     */
+    private LocalDate validUntil;
+
     private SubmissionStatus paymentStatus;
 
     private UUID studentId;

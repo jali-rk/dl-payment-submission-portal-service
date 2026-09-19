@@ -6,6 +6,7 @@ import dopaminelite.payment_portal.dto.paper.PaperCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperWindowFilter;
+import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
@@ -37,6 +38,7 @@ public class PaperService {
     private final PaperRepository paperRepository;
     private final PaymentPortalRepository portalRepository;
     private final PaperMarkRepository paperMarkRepository;
+    private final MarkOwnerResolver markOwnerResolver;
     private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
     private final CalendarEventService calendarEventService;
@@ -73,7 +75,7 @@ public class PaperService {
      */
     public PaginatedResponse<PaperResponse> listPublishedLeaderboardPapers(int limit, int offset) {
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<Paper> paperPage = paperRepository.findByLeaderboardPublishedTrueOrderByStartDateDesc(pageable);
+        Page<Paper> paperPage = paperRepository.findWithPublishedLeaderboard(pageable);
 
         List<PaperResponse> items = paperPage.getContent().stream()
                 .map(paperMapper::toResponse)
@@ -145,12 +147,18 @@ public class PaperService {
 
         validateMarkSchemeShape(scheme);
 
-        long existingMarkCount = paperMarkRepository.countByPaperId(paperId);
+        // Counted and applied against whatever owns this paper-event's grading. For a paper-event
+        // in a correlation that is the correlation, so the scheme is shared by the sittings rather
+        // than duplicated per sitting - and, critically, the lock can't be sidestepped by editing
+        // the scheme through the sibling paper-event, which has no marks of its own.
+        MarkOwner owner = markOwnerResolver.ownerOf(paper);
+
+        long existingMarkCount = paperMarkRepository.countByOwnerId(owner.getId());
         if (existingMarkCount > 0) {
             throw ValidationException.markSchemeLocked(paperId, existingMarkCount);
         }
 
-        applyMarkScheme(paper, scheme);
+        applyMarkScheme(owner, scheme);
 
         Paper updatedPaper = paperRepository.save(paper);
         return paperMapper.toResponse(updatedPaper);
@@ -210,6 +218,9 @@ public class PaperService {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
 
+        // countByPaperId, not countByOwnerId: a paper-event in a correlation holds no marks of its
+        // own, and the correlation's marks belong to the other sitting too - they are not this
+        // paper-event's dependents and must not block deleting it.
         if (paperSlotRepository.existsByPaperId(paperId) || paperMarkRepository.countByPaperId(paperId) > 0) {
             throw ValidationException.paperHasDependents(paperId);
         }
@@ -233,10 +244,10 @@ public class PaperService {
         }
     }
 
-    private void applyMarkScheme(Paper paper, MarkSchemeDto scheme) {
-        paper.setMcqMaxMarks(scheme.getMcqMaxMarks());
-        paper.setStructuredMaxMarks(scheme.getStructuredMaxMarks());
-        paper.setEssayMaxMarks(scheme.getEssayMaxMarks());
+    private void applyMarkScheme(MarkOwner owner, MarkSchemeDto scheme) {
+        owner.setMcqMaxMarks(scheme.getMcqMaxMarks());
+        owner.setStructuredMaxMarks(scheme.getStructuredMaxMarks());
+        owner.setEssayMaxMarks(scheme.getEssayMaxMarks());
     }
 
     private List<PaymentPortal> resolvePortals(List<UUID> portalIds) {

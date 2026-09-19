@@ -1,9 +1,12 @@
 package dopaminelite.payment_portal.mapper;
 
+import dopaminelite.payment_portal.dto.paper.CorrelationRefDto;
 import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.submission.PortalRefDto;
+import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.Paper;
+import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import org.springframework.stereotype.Component;
 
@@ -36,9 +39,17 @@ public class PaperMapper {
         response.setCreatedByAdminId(paper.getCreatedByAdminId());
         response.setCreatedAt(paper.getCreatedAt());
         response.setUpdatedAt(paper.getUpdatedAt());
-        response.setMarkScheme(toMarkScheme(paper));
-        response.setLeaderboardPublished(paper.isLeaderboardPublished());
-        response.setLeaderboardLastGeneratedAt(paper.getLeaderboardLastGeneratedAt());
+        // Grading belongs to the correlation when this paper-event is part of one, so the scheme
+        // and leaderboard state are read from there rather than from this row's own (unused)
+        // columns - otherwise an admin opening one sitting of a correlated paper would see an
+        // empty mark scheme and an unpublished leaderboard while the other sitting shows the real
+        // ones.
+        MarkOwner owner = paper.getCorrelation() != null ? paper.getCorrelation() : paper;
+        response.setMarkScheme(new MarkSchemeDto(
+                owner.getMcqMaxMarks(), owner.getStructuredMaxMarks(), owner.getEssayMaxMarks()));
+        response.setLeaderboardPublished(owner.isLeaderboardPublished());
+        response.setLeaderboardLastGeneratedAt(owner.getLeaderboardLastGeneratedAt());
+        response.setCorrelation(toCorrelationRef(paper.getCorrelation()));
 
         List<PortalRefDto> linkedPortals = paper.getLinkedPortals().stream()
                 .map(this::toPortalRef)
@@ -52,8 +63,10 @@ public class PaperMapper {
         return new PortalRefDto(portal.getId(), portal.getDisplayName());
     }
 
-    private MarkSchemeDto toMarkScheme(Paper paper) {
-        return new MarkSchemeDto(paper.getMcqMaxMarks(), paper.getStructuredMaxMarks(), paper.getEssayMaxMarks());
+    private CorrelationRefDto toCorrelationRef(PaperCorrelation correlation) {
+        return correlation == null
+                ? null
+                : new CorrelationRefDto(correlation.getId(), correlation.getCode(), correlation.getDisplayName());
     }
 
 }

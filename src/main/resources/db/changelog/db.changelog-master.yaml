@@ -29,3 +29,5 @@ databaseChangeLog:
       file: db/changelog/014-calendar-class-link.yaml
   - include:
       file: db/changelog/015-widen-mark-precision.yaml
+  - include:
+      file: db/changelog/016-paper-correlations.yaml

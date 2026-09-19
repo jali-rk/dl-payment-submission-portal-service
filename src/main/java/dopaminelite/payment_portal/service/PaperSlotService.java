@@ -100,19 +100,39 @@ public class PaperSlotService {
         String message = null;
 
         try {
-            PaperSlot inserted = paperSlotWriter.insertIfAbsent(submissionId, paperId);
-            if (inserted != null) {
-                slot = inserted;
-                outcome = PaperSlotCreationOutcome.CREATED;
-            } else {
-                slot = paperSlotWriter.findExisting(paperId, submissionId);
+            // Before creating anything: if this paper-event is part of a correlation and the
+            // student already holds a slot for it, they are entitled to a longer window on the
+            // same paper, not to a second QR code for it. That widens the slot they have and we
+            // stop here. Runs first so it covers retries and re-approvals too, and because each
+            // attempt below commits in its own transaction, a slot created moments earlier in
+            // this same loop (one portal can link both sittings of a paper) is already visible.
+            PaperSlot extended = paperSlotWriter.extendCorrelatedSiblingIfAny(submissionId, paperId);
+            if (extended != null) {
+                slot = extended;
                 outcome = PaperSlotCreationOutcome.ALREADY_EXISTS;
+                message = String.format(
+                        "This student already has a slot for '%s' from an earlier payment; its window now runs to %s. No second QR code is issued for the same paper.",
+                        paperTitle, extended.effectiveEndDate());
+            } else {
+                PaperSlot inserted = paperSlotWriter.insertIfAbsent(submissionId, paperId);
+                if (inserted != null) {
+                    slot = inserted;
+                    outcome = PaperSlotCreationOutcome.CREATED;
+                } else {
+                    slot = paperSlotWriter.findExisting(paperId, submissionId);
+                    outcome = PaperSlotCreationOutcome.ALREADY_EXISTS;
+                }
             }
         } catch (DataIntegrityViolationException e) {
             // A concurrent attempt won the race between the pre-check and the insert.
             // The transaction that hit this is already aborted and rolling back; fetch the
-            // winner's row in a brand new one rather than reusing anything from it.
+            // winner's row in a brand new one rather than reusing anything from it. The winner
+            // may have been an approval for the *other* portal of the same correlation, in which
+            // case the row to report is the sibling it created, not one for this pair.
             slot = paperSlotWriter.findExisting(paperId, submissionId);
+            if (slot == null) {
+                slot = paperSlotWriter.extendCorrelatedSiblingIfAny(submissionId, paperId);
+            }
             outcome = PaperSlotCreationOutcome.ALREADY_EXISTS;
         } catch (Exception e) {
             log.error("Failed to create paper slot for submission {} / paper {} ('{}'): {}",
@@ -210,7 +230,7 @@ public class PaperSlotService {
             PaperSlot current = paperSlotRepository.findById(slot.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Paper slot not found"));
             PaperSlotStatus status = PaperSlotStatus.compute(
-                    today, current.getPaper().getStartDate(), current.getPaper().getEndDate(), current.getConsumedAt());
+                    today, current.getPaper().getStartDate(), current.effectiveEndDate(), current.getConsumedAt());
             if (status == PaperSlotStatus.CONSUMED) {
                 throw new ValidationException("This paper slot has already been consumed");
             }

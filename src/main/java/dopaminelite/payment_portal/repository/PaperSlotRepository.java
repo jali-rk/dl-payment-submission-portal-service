@@ -31,6 +31,19 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
     Optional<PaperSlot> findByPaperIdAndPaymentSubmissionId(UUID paperId, UUID paymentSubmissionId);
 
     /**
+     * The slot this student already holds for a correlation, if any — the check that stops a
+     * second QR code being issued for a paper they can already sit.
+     *
+     * <p>There can only ever be one, enforced by a partial unique index over the same pair;
+     * ordering by creation date just makes the outcome deterministic if that were ever bypassed.
+     *
+     * @param correlationId the correlation to look within
+     * @param studentId the student
+     * @return their existing slot for that paper, if they have one
+     */
+    Optional<PaperSlot> findFirstByCorrelationIdAndStudentIdOrderByCreatedAtAsc(UUID correlationId, UUID studentId);
+
+    /**
      * Atomically marks a slot as consumed, but only if it is currently unconsumed AND the
      * owning paper's validity window currently includes {@code today}. This is a single
      * conditional UPDATE (not read-then-write) so concurrent double-scans of the same slot
@@ -46,7 +59,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
             WHERE paper_slots.id = :id
               AND paper_slots.paper_id = papers.id
               AND paper_slots.consumed_at IS NULL
-              AND :today BETWEEN papers.start_date AND papers.end_date
+              AND :today BETWEEN papers.start_date
+                             AND COALESCE(paper_slots.valid_until, papers.end_date)
             """, nativeQuery = true)
     int consumeIfAvailable(
             @Param("id") UUID id,
@@ -57,8 +71,10 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
 
     /**
      * Finds slots matching optional filters, with the computed status filter expressed
-     * directly in JPQL (against the joined paper's date window and consumedAt) so pagination
-     * stays correct.
+     * directly in JPQL (against the slot's effective date window and consumedAt) so pagination
+     * stays correct. The window ends at the slot's own {@code validUntil} when an extension has
+     * set one, otherwise at the paper's end date — the same rule {@code PaperSlot.effectiveEndDate}
+     * applies in Java.
      *
      * @param paperId filter by paper, null for no filtering
      * @param studentId filter by the submitting student's ID, null for no filtering
@@ -79,8 +95,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "  (CAST(:statusFilter AS string) = 'CONSUMED' AND ps.consumedAt IS NOT NULL) OR " +
            "  (CAST(:statusFilter AS string) != 'CONSUMED' AND ps.consumedAt IS NULL AND " +
            "    ((CAST(:statusFilter AS string) = 'SCHEDULED' AND :today < p.startDate) OR " +
-           "     (CAST(:statusFilter AS string) = 'AVAILABLE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
-           "     (CAST(:statusFilter AS string) = 'EXPIRED' AND :today > p.endDate)))) " +
+           "     (CAST(:statusFilter AS string) = 'AVAILABLE' AND :today BETWEEN p.startDate AND COALESCE(ps.validUntil, p.endDate)) OR " +
+           "     (CAST(:statusFilter AS string) = 'EXPIRED' AND :today > COALESCE(ps.validUntil, p.endDate))))) " +
            "ORDER BY ps.createdAt DESC")
     Page<PaperSlot> findByFilters(
             @Param("paperId") UUID paperId,

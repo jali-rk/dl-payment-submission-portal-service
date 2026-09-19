@@ -10,15 +10,14 @@ import dopaminelite.payment_portal.dto.paper.PaperMarkCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperMarkResponse;
 import dopaminelite.payment_portal.dto.paper.PaperMarkUpdateRequest;
 import dopaminelite.payment_portal.dto.paper.StudentVerificationResponse;
+import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.MarkStudentSnapshot;
-import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperMark;
 import dopaminelite.payment_portal.exception.DuplicateResourceException;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMarkMapper;
 import dopaminelite.payment_portal.repository.PaperMarkRepository;
-import dopaminelite.payment_portal.repository.PaperRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -50,9 +49,14 @@ public class PaperMarkService {
     private static final Pageable DEFAULT_LEADERBOARD_PAGE = PageRequest.of(0, 50);
 
     private final PaperMarkRepository paperMarkRepository;
-    private final PaperRepository paperRepository;
     private final PaperMarkMapper paperMarkMapper;
     private final StudentLookupService studentLookupService;
+    /**
+     * Every method below is addressed by paper-event id but operates on whatever actually owns
+     * that paper-event's grading — itself, or the correlation grouping it with the other sitting
+     * of the same real paper. See {@link MarkOwnerResolver}.
+     */
+    private final MarkOwnerResolver markOwnerResolver;
 
     /**
      * Lists marks recorded for a paper, most recently entered first.
@@ -64,10 +68,10 @@ public class PaperMarkService {
      * @throws ResourceNotFoundException if no paper exists with the given ID
      */
     public PaginatedResponse<PaperMarkResponse> listMarks(UUID paperId, int limit, int offset) {
-        requirePaperExists(paperId);
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<PaperMark> page = paperMarkRepository.findByPaperId(paperId, pageable);
+        Page<PaperMark> page = paperMarkRepository.findByOwnerId(owner.getId(), pageable);
 
         List<PaperMarkResponse> items = page.getContent().stream()
                 .map(paperMarkMapper::toResponse)
@@ -102,13 +106,13 @@ public class PaperMarkService {
      *         exists with that code number
      */
     public StudentVerificationResponse verifyStudent(UUID paperId, String studentCodeNumber) {
-        requirePaperExists(paperId);
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         StudentLookupDto student = studentLookupService.findByCodeNumber(studentCodeNumber)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Student not found with code number: " + studentCodeNumber));
 
-        boolean alreadyHasMark = paperMarkRepository.existsByPaperIdAndStudentId(paperId, student.getId());
+        boolean alreadyHasMark = paperMarkRepository.existsByOwnerIdAndStudentId(owner.getId(), student.getId());
 
         return new StudentVerificationResponse(
                 student.getId(), student.getCodeNumber(), student.getFullName(),
@@ -130,28 +134,27 @@ public class PaperMarkService {
      */
     @Transactional
     public PaperMarkResponse createMark(UUID paperId, PaperMarkCreateRequest request, UUID instructorId) {
-        Paper paper = paperRepository.findById(paperId)
-                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
-        if (paper.getMcqMaxMarks() == null && paper.getStructuredMaxMarks() == null && paper.getEssayMaxMarks() == null) {
+        if (owner.getMcqMaxMarks() == null && owner.getStructuredMaxMarks() == null && owner.getEssayMaxMarks() == null) {
             throw new ValidationException("Paper " + paperId + " has no mark scheme configured");
         }
 
-        validateSectionOnCreate("MCQ", paper.getMcqMaxMarks(), request.getMcqMarks());
-        validateSectionOnCreate("Structured", paper.getStructuredMaxMarks(), request.getStructuredMarks());
-        validateSectionOnCreate("Essay", paper.getEssayMaxMarks(), request.getEssayMarks());
+        validateSectionOnCreate("MCQ", owner.getMcqMaxMarks(), request.getMcqMarks());
+        validateSectionOnCreate("Structured", owner.getStructuredMaxMarks(), request.getStructuredMarks());
+        validateSectionOnCreate("Essay", owner.getEssayMaxMarks(), request.getEssayMarks());
         validateBounds("Total marks", request.getTotalMarks(), ZERO, ONE_HUNDRED);
 
         StudentLookupDto student = studentLookupService.findByCodeNumber(request.getStudentCodeNumber())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Student not found with code number: " + request.getStudentCodeNumber()));
 
-        if (paperMarkRepository.existsByPaperIdAndStudentId(paperId, student.getId())) {
+        if (paperMarkRepository.existsByOwnerIdAndStudentId(owner.getId(), student.getId())) {
             throw DuplicateResourceException.marksAlreadyExist(paperId, student.getId());
         }
 
         PaperMark mark = new PaperMark();
-        mark.setPaper(paper);
+        mark.assignOwner(owner);
         mark.setStudentId(student.getId());
         mark.setStudentSnapshot(toStudentSnapshot(student));
         mark.setMcqMarks(request.getMcqMarks());
@@ -179,22 +182,24 @@ public class PaperMarkService {
      */
     @Transactional
     public PaperMarkResponse updateMark(UUID paperId, UUID markId, PaperMarkUpdateRequest request, UUID instructorId) {
-        PaperMark mark = paperMarkRepository.findByIdAndPaperId(markId, paperId)
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
+
+        PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
 
-        Paper paper = mark.getPaper();
-
+        // Deliberately the resolved owner's scheme rather than mark.getPaper()'s: a
+        // correlation-owned mark has no paper at all, and reading one off it would NPE.
         if (request.getMcqMarks() != null) {
-            validateSectionOnUpdate("MCQ", paper.getMcqMaxMarks(), request.getMcqMarks());
+            validateSectionOnUpdate("MCQ", owner.getMcqMaxMarks(), request.getMcqMarks());
             mark.setMcqMarks(request.getMcqMarks());
         }
         if (request.getStructuredMarks() != null) {
-            validateSectionOnUpdate("Structured", paper.getStructuredMaxMarks(), request.getStructuredMarks());
+            validateSectionOnUpdate("Structured", owner.getStructuredMaxMarks(), request.getStructuredMarks());
             mark.setStructuredMarks(request.getStructuredMarks());
         }
         if (request.getEssayMarks() != null) {
-            validateSectionOnUpdate("Essay", paper.getEssayMaxMarks(), request.getEssayMarks());
+            validateSectionOnUpdate("Essay", owner.getEssayMaxMarks(), request.getEssayMarks());
             mark.setEssayMarks(request.getEssayMarks());
         }
         if (request.getTotalMarks() != null) {
@@ -217,7 +222,9 @@ public class PaperMarkService {
      */
     @Transactional
     public void deleteMark(UUID paperId, UUID markId) {
-        PaperMark mark = paperMarkRepository.findByIdAndPaperId(markId, paperId)
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
+
+        PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
 
@@ -243,14 +250,13 @@ public class PaperMarkService {
      *         to avoid leaking who's ranked to an unauthorized viewer)
      */
     public PaperLeaderboardResponse getLeaderboard(UUID paperId, String callerRole, UUID callerId, int limit, int offset) {
-        Paper paper = paperRepository.findById(paperId)
-                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
-        if (!paper.isLeaderboardPublished() && !isPrivilegedForLeaderboard(callerRole)) {
+        if (!owner.isLeaderboardPublished() && !isPrivilegedForLeaderboard(callerRole)) {
             throw new ResourceNotFoundException("Leaderboard not published for paper: " + paperId);
         }
 
-        return toLeaderboardResponse(paper, callerId, PageRequest.of(offset / limit, limit));
+        return toLeaderboardResponse(paperId, owner, callerId, PageRequest.of(offset / limit, limit));
     }
 
     /**
@@ -267,10 +273,9 @@ public class PaperMarkService {
      */
     @Transactional
     public PaperLeaderboardResponse generateRanks(UUID paperId, UUID callerId) {
-        Paper paper = paperRepository.findById(paperId)
-                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
-        List<PaperMark> marks = paperMarkRepository.findByPaperIdOrderByTotalMarksDesc(paperId);
+        List<PaperMark> marks = paperMarkRepository.findByOwnerIdOrderByTotalMarksDesc(owner.getId());
         if (marks.isEmpty()) {
             throw ValidationException.noMarksToGenerateRanksFor(paperId);
         }
@@ -287,11 +292,13 @@ public class PaperMarkService {
         }
         paperMarkRepository.saveAll(marks);
 
-        paper.setLeaderboardLastGeneratedAt(LocalDateTime.now());
-        paper.setLeaderboardLastGeneratedBy(callerId);
-        Paper savedPaper = paperRepository.save(paper);
+        // The owner was loaded inside this transaction and so is managed either way (a Paper, or
+        // a PaperCorrelation reached through it) - these writes flush on commit without needing
+        // an explicit save against one of two different repositories.
+        owner.setLeaderboardLastGeneratedAt(LocalDateTime.now());
+        owner.setLeaderboardLastGeneratedBy(callerId);
 
-        return toLeaderboardResponse(savedPaper, null, DEFAULT_LEADERBOARD_PAGE);
+        return toLeaderboardResponse(paperId, owner, null, DEFAULT_LEADERBOARD_PAGE);
     }
 
     /**
@@ -306,17 +313,16 @@ public class PaperMarkService {
      */
     @Transactional
     public PaperLeaderboardResponse setLeaderboardVisibility(UUID paperId, LeaderboardVisibilityUpdateRequest request) {
-        Paper paper = paperRepository.findById(paperId)
-                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
 
-        if (request.isPublished() && paper.getLeaderboardLastGeneratedAt() == null) {
+        if (request.isPublished() && owner.getLeaderboardLastGeneratedAt() == null) {
             throw ValidationException.leaderboardNotGeneratedYet(paperId);
         }
 
-        paper.setLeaderboardPublished(request.isPublished());
-        Paper savedPaper = paperRepository.save(paper);
+        // Managed entity, flushed on commit - see generateRanks.
+        owner.setLeaderboardPublished(request.isPublished());
 
-        return toLeaderboardResponse(savedPaper, null, DEFAULT_LEADERBOARD_PAGE);
+        return toLeaderboardResponse(paperId, owner, null, DEFAULT_LEADERBOARD_PAGE);
     }
 
     private boolean isPrivilegedForLeaderboard(String callerRole) {
@@ -325,34 +331,36 @@ public class PaperMarkService {
                 || "MAIN_ADMIN".equalsIgnoreCase(callerRole);
     }
 
-    private PaperLeaderboardResponse toLeaderboardResponse(Paper paper, UUID callerId, Pageable pageable) {
-        Page<PaperMark> page = paperMarkRepository.findByPaperIdAndRankIsNotNullOrderByRankAscIdAsc(paper.getId(), pageable);
+    /**
+     * @param paperId the paper-event the caller addressed, echoed back unchanged so their existing
+     *        links keep working — deliberately not the owner's id, which for a correlation is not
+     *        a paper id at all
+     * @param owner what actually holds the marks and leaderboard being described
+     */
+    private PaperLeaderboardResponse toLeaderboardResponse(UUID paperId, MarkOwner owner, UUID callerId, Pageable pageable) {
+        Page<PaperMark> page = paperMarkRepository.findRankedByOwnerId(owner.getId(), pageable);
         List<LeaderboardEntryDto> entries = page.getContent().stream()
                 .map(paperMarkMapper::toLeaderboardEntry)
                 .toList();
 
         LeaderboardEntryDto callerEntry = callerId == null ? null : paperMarkRepository
-                .findByPaperIdAndStudentIdAndRankIsNotNull(paper.getId(), callerId)
+                .findRankedByOwnerIdAndStudentId(owner.getId(), callerId)
                 .map(paperMarkMapper::toLeaderboardEntry)
                 .orElse(null);
 
         PaperLeaderboardResponse response = new PaperLeaderboardResponse();
-        response.setPaperId(paper.getId());
-        response.setPaperTitle(paper.getTitle());
-        response.setMarkScheme(new MarkSchemeDto(paper.getMcqMaxMarks(), paper.getStructuredMaxMarks(), paper.getEssayMaxMarks()));
-        response.setPublished(paper.isLeaderboardPublished());
-        response.setLastGeneratedAt(paper.getLeaderboardLastGeneratedAt());
-        response.setLastGeneratedByInstructorId(paper.getLeaderboardLastGeneratedBy());
+        response.setPaperId(paperId);
+        // For a correlation this is its display name, so the two sittings of one paper are never
+        // shown to instructors or students under two different titles.
+        response.setPaperTitle(owner.getDisplayTitle());
+        response.setMarkScheme(new MarkSchemeDto(owner.getMcqMaxMarks(), owner.getStructuredMaxMarks(), owner.getEssayMaxMarks()));
+        response.setPublished(owner.isLeaderboardPublished());
+        response.setLastGeneratedAt(owner.getLeaderboardLastGeneratedAt());
+        response.setLastGeneratedByInstructorId(owner.getLeaderboardLastGeneratedBy());
         response.setEntries(entries);
         response.setTotal(page.getTotalElements());
         response.setCallerEntry(callerEntry);
         return response;
-    }
-
-    private void requirePaperExists(UUID paperId) {
-        if (!paperRepository.existsById(paperId)) {
-            throw new ResourceNotFoundException("Paper not found with id: " + paperId);
-        }
     }
 
     private void validateSectionOnCreate(String sectionLabel, BigDecimal sectionMax, BigDecimal value) {
