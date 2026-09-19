@@ -178,4 +178,63 @@ public class ValidationException extends RuntimeException {
         );
     }
 
+
+    /**
+     * Factory method for when a paper-event can't join or leave a correlation because it has
+     * already started, has marks of its own, or the correlation has already issued slots.
+     *
+     * @param paperId the paper-event whose correlation change was rejected
+     * @param reason why it was rejected, phrased to complete the sentence below
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException correlationChangeNotAllowed(UUID paperId, String reason) {
+        return new ValidationException(String.format(
+            "Cannot change the correlation of paper %s: %s.", paperId, reason
+        ));
+    }
+
+    /**
+     * Factory method for when a paper-event is given a mark scheme that disagrees with the one
+     * already set on the correlation it is joining. The scheme belongs to the correlation, so its
+     * sittings cannot be marked out of different totals.
+     *
+     * @param code the correlation's code
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException correlationMarkSchemeMismatch(String code) {
+        return new ValidationException(String.format(
+            "Correlation %s already has a mark scheme. A paper-event joining it must use the same one, "
+            + "or leave the mark scheme empty to inherit it.",
+            code
+        ));
+    }
+
+    /**
+     * Factory method for when a correlation can't be deleted because paper-events still point at
+     * it and/or marks have been recorded against it.
+     *
+     * @param correlationId the correlation whose deletion was rejected
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException correlationHasDependents(UUID correlationId) {
+        return new ValidationException(String.format(
+            "Cannot delete correlation %s: paper-events still belong to it and/or marks exist for it. "
+            + "Detach its paper-events first.",
+            correlationId
+        ));
+    }
+
+    /**
+     * Factory method for a correlation code that isn't in the required shape.
+     *
+     * @param code the rejected code
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException invalidCorrelationCode(String code) {
+        return new ValidationException(String.format(
+            "Correlation code '%s' is not valid: use letters, digits, hyphens and underscores only, with no spaces.",
+            code
+        ));
+    }
+
 }

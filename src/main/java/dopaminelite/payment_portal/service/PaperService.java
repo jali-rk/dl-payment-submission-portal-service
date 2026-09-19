@@ -8,10 +8,12 @@ import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperWindowFilter;
 import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.Paper;
+import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMapper;
+import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperMarkRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.repository.PaperSlotRepository;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -38,6 +41,7 @@ public class PaperService {
     private final PaperRepository paperRepository;
     private final PaymentPortalRepository portalRepository;
     private final PaperMarkRepository paperMarkRepository;
+    private final PaperCorrelationRepository correlationRepository;
     private final MarkOwnerResolver markOwnerResolver;
     private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
@@ -119,9 +123,18 @@ public class PaperService {
         paper.setCreatedByAdminId(adminId);
         paper.setLinkedPortals(resolvePortals(request.getLinkedPortalIds()));
 
+        if (request.getCorrelationId() != null) {
+            paper.setCorrelation(requireCorrelation(request.getCorrelationId()));
+        }
+
         if (request.getMarkScheme() != null) {
             validateMarkSchemeShape(request.getMarkScheme());
-            applyMarkScheme(paper, request.getMarkScheme());
+            // Applied to the correlation when there is one, so the sittings of a paper share a
+            // single scheme. Joining a correlation that already has one with a *different* scheme
+            // is refused rather than silently overwriting what the other sitting is marked against.
+            MarkOwner owner = markOwnerResolver.ownerOf(paper);
+            requireMarkSchemeCompatible(owner, request.getMarkScheme());
+            applyMarkScheme(owner, request.getMarkScheme());
         }
 
         Paper savedPaper = paperRepository.save(paper);
@@ -200,6 +213,10 @@ public class PaperService {
             paper.setLinkedPortals(resolvePortals(request.getLinkedPortalIds()));
         }
 
+        if (request.getCorrelationId() != null) {
+            applyCorrelationChange(paper, requireCorrelation(request.getCorrelationId()));
+        }
+
         Paper updatedPaper = paperRepository.save(paper);
         calendarEventService.syncPaperDates(paperId, updatedPaper.getStartDate(), updatedPaper.getEndDate());
         return paperMapper.toResponse(updatedPaper);
@@ -241,6 +258,74 @@ public class PaperService {
     private void validateMarkSchemeShape(MarkSchemeDto scheme) {
         if (scheme.getMcqMaxMarks() == null && scheme.getStructuredMaxMarks() == null && scheme.getEssayMaxMarks() == null) {
             throw ValidationException.markSchemeRequiresAtLeastOneSection();
+        }
+    }
+
+    private PaperCorrelation requireCorrelation(UUID correlationId) {
+        return correlationRepository.findById(correlationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Correlation not found with id: " + correlationId));
+    }
+
+    /**
+     * Moves a paper-event into a correlation, refusing when doing so would rewrite history.
+     *
+     * <p>Three things block it:
+     * <ul>
+     *   <li><b>It has already started.</b> Students may already be sitting it, and the change
+     *       decides who gets a QR code for what.</li>
+     *   <li><b>It has marks of its own.</b> Those belong to this paper-event; joining a
+     *       correlation moves grading to the correlation and would strand them, invisible.</li>
+     *   <li><b>It has slots of its own.</b> A slot records its correlation when it is created, and
+     *       that record is what stops a second QR being issued for the same paper. Slots created
+     *       before the move carry no correlation, so they'd never be found — and the duplicate
+     *       this feature exists to prevent would happen anyway.</li>
+     * </ul>
+     *
+     * <p>Note the third condition is about <em>this paper-event's</em> slots, not the
+     * correlation's. Joining a correlation that already has slots from its other sitting is the
+     * normal case — it is exactly how the second sitting is added once the first month's payments
+     * have started being approved.
+     */
+    private void applyCorrelationChange(Paper paper, PaperCorrelation correlation) {
+        if (correlation.equals(paper.getCorrelation())) {
+            return;
+        }
+        if (!paper.getStartDate().isAfter(LocalDate.now())) {
+            throw ValidationException.correlationChangeNotAllowed(paper.getId(), "it has already started");
+        }
+        if (paperMarkRepository.countByPaperId(paper.getId()) > 0) {
+            throw ValidationException.correlationChangeNotAllowed(paper.getId(), "it already has marks of its own");
+        }
+        if (paperSlotRepository.existsByPaperId(paper.getId())) {
+            throw ValidationException.correlationChangeNotAllowed(
+                    paper.getId(), "slots have already been issued for it");
+        }
+
+        paper.setCorrelation(correlation);
+    }
+
+    /**
+     * Refuses a mark scheme that disagrees with the one its correlation already carries. The
+     * scheme belongs to the correlation, so the two sittings of a paper cannot be marked out of
+     * different totals; an empty scheme on the correlation means this is simply the first to set it.
+     */
+    private void requireMarkSchemeCompatible(MarkOwner owner, MarkSchemeDto scheme) {
+        if (!(owner instanceof PaperCorrelation correlation)) {
+            return;
+        }
+        boolean correlationHasScheme = correlation.getMcqMaxMarks() != null
+                || correlation.getStructuredMaxMarks() != null
+                || correlation.getEssayMaxMarks() != null;
+        if (!correlationHasScheme) {
+            return;
+        }
+
+        boolean same = Objects.equals(correlation.getMcqMaxMarks(), scheme.getMcqMaxMarks())
+                && Objects.equals(correlation.getStructuredMaxMarks(), scheme.getStructuredMaxMarks())
+                && Objects.equals(correlation.getEssayMaxMarks(), scheme.getEssayMaxMarks());
+        if (!same) {
+            throw ValidationException.correlationMarkSchemeMismatch(correlation.getCode());
         }
     }
 
