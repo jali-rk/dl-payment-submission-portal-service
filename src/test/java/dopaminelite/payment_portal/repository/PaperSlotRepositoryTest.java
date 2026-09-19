@@ -216,7 +216,7 @@ class PaperSlotRepositoryTest {
         entityManager.clear();
 
         List<PaperSlotRepository.CenterAttendanceAggregate> rows =
-                paperSlotRepository.aggregateAttendanceByCenter(paper.getId(), PaperWritingMode.PHYSICAL);
+                paperSlotRepository.aggregateAttendanceByCenter(List.of(paper.getId()), PaperWritingMode.PHYSICAL);
 
         // Only PHYSICAL students counted (4), grouped into 3 buckets: Colombo, Kandy, null.
         assertThat(rows).hasSize(3);
@@ -250,15 +250,15 @@ class PaperSlotRepositoryTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        var everyone = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, null, pageable);
+        var everyone = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), null, null, null, pageable);
         assertThat(everyone.getTotalElements()).isEqualTo(2);
 
-        var unassignedBucket = paperSlotRepository.findAttendanceStudents(paper.getId(), "UNASSIGNED", null, null, pageable);
+        var unassignedBucket = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), "UNASSIGNED", null, null, pageable);
         assertThat(unassignedBucket.getTotalElements()).isEqualTo(1);
         assertThat(unassignedBucket.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
                 .isEqualTo("STU-B");
 
-        var colomboBucket = paperSlotRepository.findAttendanceStudents(paper.getId(), colomboId, null, null, pageable);
+        var colomboBucket = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), colomboId, null, null, pageable);
         assertThat(colomboBucket.getTotalElements()).isEqualTo(1);
         assertThat(colomboBucket.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
                 .isEqualTo("STU-A");
@@ -281,11 +281,11 @@ class PaperSlotRepositoryTest {
         Pageable pageable = PageRequest.of(0, 10);
 
         // Without the alternate, only the id-stored row matches.
-        var idOnly = paperSlotRepository.findAttendanceStudents(paper.getId(), colomboId, null, null, pageable);
+        var idOnly = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), colomboId, null, null, pageable);
         assertThat(idOnly.getTotalElements()).isEqualTo(1);
 
         // With the resolved name passed as the alternate, both rows match as the same center.
-        var both = paperSlotRepository.findAttendanceStudents(paper.getId(), colomboId, "Colombo Main Center", null, pageable);
+        var both = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), colomboId, "Colombo Main Center", null, pageable);
         assertThat(both.getTotalElements()).isEqualTo(2);
     }
 
@@ -301,7 +301,7 @@ class PaperSlotRepositoryTest {
         entityManager.clear();
 
         Pageable pageable = PageRequest.of(0, 10);
-        var results = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, null, pageable);
+        var results = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), null, null, null, pageable);
 
         assertThat(results.getTotalElements()).isEqualTo(1);
         assertThat(results.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
@@ -321,17 +321,17 @@ class PaperSlotRepositoryTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        var attendedOnly = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, true, pageable);
+        var attendedOnly = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), null, null, true, pageable);
         assertThat(attendedOnly.getTotalElements()).isEqualTo(1);
         assertThat(attendedOnly.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
                 .isEqualTo("STU-A");
 
-        var absentOnly = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, false, pageable);
+        var absentOnly = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), null, null, false, pageable);
         assertThat(absentOnly.getTotalElements()).isEqualTo(1);
         assertThat(absentOnly.getContent().get(0).getPaymentSubmission().getStudentSnapshot().getCodeNumber())
                 .isEqualTo("STU-B");
 
-        var both = paperSlotRepository.findAttendanceStudents(paper.getId(), null, null, null, pageable);
+        var both = paperSlotRepository.findAttendanceStudents(List.of(paper.getId()), null, null, null, pageable);
         assertThat(both.getTotalElements()).isEqualTo(2);
     }
 

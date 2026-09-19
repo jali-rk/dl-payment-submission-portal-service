@@ -116,7 +116,9 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * resolving it to a display name — and handling the known legacy bug where some rows hold a
      * center *name* in that column instead of a UUID — is the caller's responsibility.
      *
-     * @param paperId the paper to aggregate attendance for
+     * @param paperIds the paper-events to aggregate across - one id normally, or every
+     *        sitting of the paper when it is part of a correlation, since a student's single
+     *        slot sits on whichever sitting created it
      * @param paperWritingMode always {@link PaperWritingMode#PHYSICAL}, passed as a parameter
      *        rather than hardcoded in JPQL so the enum comparison is type-checked
      * @return one row per distinct center key found among this paper's slots
@@ -125,11 +127,11 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "COUNT(ps) AS opened, " +
            "SUM(CASE WHEN ps.consumedAt IS NOT NULL THEN 1 ELSE 0 END) AS attended " +
            "FROM PaperSlot ps " +
-           "WHERE ps.paper.id = :paperId " +
+           "WHERE ps.paper.id IN :paperIds " +
            "AND ps.paymentSubmission.studentSnapshot.paperWritingMode = :paperWritingMode " +
            "GROUP BY ps.paymentSubmission.studentSnapshot.paperCenterId")
     List<CenterAttendanceAggregate> aggregateAttendanceByCenter(
-            @Param("paperId") UUID paperId,
+            @Param("paperIds") List<UUID> paperIds,
             @Param("paperWritingMode") PaperWritingMode paperWritingMode
     );
 
@@ -153,7 +155,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * filtering by a center's id would silently miss every student whose row happens to hold that
      * center's name instead.
      *
-     * @param paperId the paper to list attendance for
+     * @param paperIds the paper-events to list across (see {@link #aggregateAttendanceByCenter})
      * @param centerId null for no center filter, {@code "UNASSIGNED"} for no-center students, else an exact raw center key
      * @param centerIdAlternate an additional raw value that also counts as a match (typically the
      *        resolved center's name), or null if there's none to also check
@@ -163,7 +165,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      */
     @Query("SELECT ps FROM PaperSlot ps " +
            "JOIN FETCH ps.paymentSubmission sub " +
-           "WHERE ps.paper.id = :paperId AND " +
+           "WHERE ps.paper.id IN :paperIds AND " +
            "sub.studentSnapshot.paperWritingMode = dopaminelite.payment_portal.entity.enums.PaperWritingMode.PHYSICAL AND " +
            "(:centerId IS NULL OR " +
            "  (:centerId = 'UNASSIGNED' AND sub.studentSnapshot.paperCenterId IS NULL) OR " +
@@ -174,7 +176,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "  (:attended = FALSE AND ps.consumedAt IS NULL)) " +
            "ORDER BY sub.studentSnapshot.fullName ASC")
     Page<PaperSlot> findAttendanceStudents(
-            @Param("paperId") UUID paperId,
+            @Param("paperIds") List<UUID> paperIds,
             @Param("centerId") String centerId,
             @Param("centerIdAlternate") String centerIdAlternate,
             @Param("attended") Boolean attended,

@@ -7,6 +7,7 @@ import dopaminelite.payment_portal.repository.PaperRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -49,6 +50,28 @@ public class MarkOwnerResolver {
      */
     public MarkOwner ownerOf(Paper paper) {
         return paper.getCorrelation() != null ? paper.getCorrelation() : paper;
+    }
+
+    /**
+     * Every paper-event that makes up the same real paper as this one — itself alone when it has
+     * no correlation, otherwise all the sittings sharing that correlation.
+     *
+     * <p>For anything counted per slot rather than per mark (attendance, most obviously): a
+     * student's single slot sits on whichever sitting happened to create it, so counting only the
+     * paper-event being asked about would credit one sitting with nearly everyone and leave the
+     * other looking empty.
+     *
+     * @param paperId the paper-event's ID
+     * @return the ids to count across, always including {@code paperId} itself
+     * @throws ResourceNotFoundException if no paper exists with that ID
+     */
+    public List<UUID> memberPaperIds(UUID paperId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        return paper.getCorrelation() == null
+                ? List.of(paperId)
+                : paperRepository.findIdsByCorrelationId(paper.getCorrelation().getId());
     }
 
 }

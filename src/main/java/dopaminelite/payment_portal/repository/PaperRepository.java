@@ -64,6 +64,24 @@ public interface PaperRepository extends JpaRepository<Paper, UUID> {
      * @param pageable pagination information
      * @return a page of papers with a published leaderboard, most recently started first
      */
+    /**
+     * The ids of every paper-event in a correlation — the sittings that together make up one real
+     * paper.
+     *
+     * @param correlationId the correlation
+     * @return its paper-events' ids
+     */
+    @Query("SELECT p.id FROM Paper p WHERE p.correlation.id = :correlationId")
+    List<UUID> findIdsByCorrelationId(@Param("correlationId") UUID correlationId);
+
+    /**
+     * Every paper-event in a correlation.
+     *
+     * @param correlationId the correlation
+     * @return its paper-events
+     */
+    List<Paper> findByCorrelationId(UUID correlationId);
+
     @Query("SELECT p FROM Paper p WHERE "
             + "(p.correlation IS NULL AND p.leaderboardPublished = true) OR "
             + "(p.correlation IS NOT NULL AND p.correlation.leaderboardPublished = true AND "

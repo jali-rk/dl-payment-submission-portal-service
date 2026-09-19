@@ -67,6 +67,7 @@ public class PaperAttendanceService {
     private final PaperRepository paperRepository;
     private final PaperSlotRepository paperSlotRepository;
     private final PaperCenterService paperCenterService;
+    private final MarkOwnerResolver markOwnerResolver;
 
     /**
      * Builds the per-center attendance breakdown for a paper: every currently-active paper
@@ -93,8 +94,12 @@ public class PaperAttendanceService {
     public PaperCenterAttendanceSummaryResponse getByCenterSummary(UUID paperId) {
         Paper paper = requirePaper(paperId);
 
-        List<PaperSlotRepository.CenterAttendanceAggregate> aggregates =
-                paperSlotRepository.aggregateAttendanceByCenter(paperId, PaperWritingMode.PHYSICAL);
+        // Counted across every sitting of this paper, not just the one asked about: a student who
+        // paid two months holds a single slot, sitting on whichever sitting created it, so scoping
+        // to one paper-event would credit that sitting with nearly everyone and show the other as
+        // almost empty.
+        List<PaperSlotRepository.CenterAttendanceAggregate> aggregates = paperSlotRepository
+                .aggregateAttendanceByCenter(markOwnerResolver.memberPaperIds(paperId), PaperWritingMode.PHYSICAL);
 
         // Active centers decide which zero-slot placeholder rows appear; the full (active +
         // deleted) map is only for resolving/merging raw keys, so a since-deleted center with
@@ -163,8 +168,9 @@ public class PaperAttendanceService {
         String centerIdAlternate = centerId != null ? allCenterNames.get(centerId) : null;
 
         Pageable pageable = PageRequest.of(offset / limit, limit);
+        // Across every sitting of this paper - see getByCenterSummary.
         Page<PaperSlot> page = paperSlotRepository.findAttendanceStudents(
-                paperId, centerId, centerIdAlternate, attended, pageable);
+                markOwnerResolver.memberPaperIds(paperId), centerId, centerIdAlternate, attended, pageable);
 
         List<PaperCenterAttendanceStudentDto> items = page.getContent().stream()
                 .map(slot -> toStudentDto(slot, allCenterNames, centerIdsByName))
