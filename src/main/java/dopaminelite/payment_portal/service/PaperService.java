@@ -12,6 +12,7 @@ import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.StudentSnapshot;
+import dopaminelite.payment_portal.entity.enums.PaperAuditAction;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMapper;
@@ -49,6 +50,7 @@ public class PaperService {
     private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
     private final CalendarEventService calendarEventService;
+    private final PaperAuditService paperAuditService;
 
     /**
      * Retrieves a paginated list of papers with optional filtering.
@@ -141,6 +143,13 @@ public class PaperService {
         }
 
         Paper savedPaper = paperRepository.save(paper);
+        paperAuditService.record(savedPaper.getId(), savedPaper.getCorrelation(), PaperAuditAction.PAPER_CREATED,
+                String.format("'%s' %s..%s, portals: %s%s", savedPaper.getTitle(),
+                        savedPaper.getStartDate(), savedPaper.getEndDate(), describePortals(savedPaper),
+                        savedPaper.getCorrelation() == null
+                                ? ""
+                                : ", correlation: " + savedPaper.getCorrelation().getCode()),
+                adminId);
         calendarEventService.createPaperEvent(savedPaper);
         return paperMapper.toResponse(savedPaper);
     }
@@ -157,7 +166,7 @@ public class PaperService {
      *         marks for the paper first to unlock it)
      */
     @Transactional
-    public PaperResponse updateMarkScheme(UUID paperId, MarkSchemeDto scheme) {
+    public PaperResponse updateMarkScheme(UUID paperId, MarkSchemeDto scheme, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
 
@@ -177,6 +186,11 @@ public class PaperService {
         applyMarkScheme(owner, scheme);
 
         Paper updatedPaper = paperRepository.save(paper);
+        paperAuditService.record(paperId, paper.getCorrelation(), PaperAuditAction.MARK_SCHEME_CHANGED,
+                String.format("mcq=%s, structured=%s, essay=%s%s",
+                        scheme.getMcqMaxMarks(), scheme.getStructuredMaxMarks(), scheme.getEssayMaxMarks(),
+                        paper.getCorrelation() == null ? "" : " (shared by " + paper.getCorrelation().getCode() + ")"),
+                actorId);
         return paperMapper.toResponse(updatedPaper);
     }
 
@@ -191,9 +205,16 @@ public class PaperService {
      * @throws ValidationException if the resulting validity window is invalid, or linkedPortalIds is present but empty
      */
     @Transactional
-    public PaperResponse updatePaper(UUID paperId, PaperUpdateRequest request) {
+    public PaperResponse updatePaper(UUID paperId, PaperUpdateRequest request, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        // Captured before anything is applied, so the trail can say what actually changed rather
+        // than just what was sent.
+        LocalDate previousStart = paper.getStartDate();
+        LocalDate previousEnd = paper.getEndDate();
+        String previousPortals = describePortals(paper);
+        PaperCorrelation previousCorrelation = paper.getCorrelation();
 
         if (request.getTitle() != null) {
             paper.setTitle(request.getTitle());
@@ -217,12 +238,50 @@ public class PaperService {
         }
 
         if (request.getCorrelationId() != null) {
-            applyCorrelationChange(paper, requireCorrelation(request.getCorrelationId()));
+            applyCorrelationChange(paper, requireCorrelation(request.getCorrelationId()), actorId);
         }
 
         Paper updatedPaper = paperRepository.save(paper);
+        recordWindowAndPortalChanges(updatedPaper, previousStart, previousEnd, previousPortals,
+                previousCorrelation, actorId);
         calendarEventService.syncPaperDates(paperId, updatedPaper.getStartDate(), updatedPaper.getEndDate());
         return paperMapper.toResponse(updatedPaper);
+    }
+
+    /**
+     * Records the two changes that quietly alter who is entitled to sit a paper: moving its window,
+     * and re-pointing which payments unlock it. Both are written only when the value actually
+     * differs, so the trail stays readable rather than one entry per save.
+     */
+    private void recordWindowAndPortalChanges(Paper paper, LocalDate previousStart, LocalDate previousEnd,
+                                              String previousPortals, PaperCorrelation previousCorrelation,
+                                              UUID actorId) {
+        if (!previousStart.equals(paper.getStartDate()) || !previousEnd.equals(paper.getEndDate())) {
+            paperAuditService.record(paper.getId(), paper.getCorrelation(), PaperAuditAction.DATES_CHANGED,
+                    String.format("%s..%s -> %s..%s", previousStart, previousEnd,
+                            paper.getStartDate(), paper.getEndDate()),
+                    actorId);
+        }
+
+        String currentPortals = describePortals(paper);
+        if (!previousPortals.equals(currentPortals)) {
+            paperAuditService.record(paper.getId(), paper.getCorrelation(), PaperAuditAction.PORTALS_CHANGED,
+                    String.format("%s -> %s", previousPortals, currentPortals), actorId);
+        }
+
+        // Detaching is only reachable here when a correlation change was rejected partway; an
+        // attach records itself inside applyCorrelationChange, where the old value is still known.
+        if (previousCorrelation != null && paper.getCorrelation() == null) {
+            paperAuditService.record(paper.getId(), previousCorrelation, PaperAuditAction.CORRELATION_DETACHED,
+                    String.format("left %s", previousCorrelation.getCode()), actorId);
+        }
+    }
+
+    private String describePortals(Paper paper) {
+        return paper.getLinkedPortals().stream()
+                .map(PaymentPortal::getDisplayName)
+                .sorted()
+                .collect(Collectors.joining(", "));
     }
 
     /**
@@ -234,7 +293,7 @@ public class PaperService {
      *         against it — remove those first
      */
     @Transactional
-    public void deletePaper(UUID paperId) {
+    public void deletePaper(UUID paperId, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
 
@@ -245,6 +304,12 @@ public class PaperService {
             throw ValidationException.paperHasDependents(paperId);
         }
 
+        // Recorded before the delete, while the paper's own details are still readable - and kept
+        // afterwards, since the trail holds bare ids rather than foreign keys precisely so it
+        // outlives what it describes.
+        paperAuditService.record(paperId, paper.getCorrelation(), PaperAuditAction.PAPER_DELETED,
+                String.format("'%s' %s..%s", paper.getTitle(), paper.getStartDate(), paper.getEndDate()),
+                actorId);
         paperRepository.delete(paper);
     }
 
@@ -286,7 +351,7 @@ public class PaperService {
      * predating the move are restamped here rather than left invisible to it. That is what makes
      * tagging safe at any point, including as a repair once payments are already flowing.
      */
-    private void applyCorrelationChange(Paper paper, PaperCorrelation correlation) {
+    private void applyCorrelationChange(Paper paper, PaperCorrelation correlation, UUID actorId) {
         if (correlation.equals(paper.getCorrelation())) {
             return;
         }
@@ -299,9 +364,15 @@ public class PaperService {
 
         requireNoSlotCollision(paper, correlation);
 
+        PaperCorrelation previous = paper.getCorrelation();
         paper.setCorrelation(correlation);
         paperRepository.saveAndFlush(paper);
-        paperSlotRepository.stampCorrelationOnSlots(paper.getId(), correlation);
+        int restamped = paperSlotRepository.stampCorrelationOnSlots(paper.getId(), correlation);
+
+        paperAuditService.record(paper.getId(), correlation, PaperAuditAction.CORRELATION_ATTACHED,
+                String.format("%s -> %s, %d existing slot(s) brought along",
+                        previous == null ? "none" : previous.getCode(), correlation.getCode(), restamped),
+                actorId);
     }
 
     /**

@@ -122,9 +122,10 @@ public class PaperController {
     @PatchMapping("/{paperId}")
     public ResponseEntity<PaperResponse> updatePaper(
             @PathVariable UUID paperId,
-            @Valid @RequestBody PaperUpdateRequest request
+            @Valid @RequestBody PaperUpdateRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        PaperResponse response = paperService.updatePaper(paperId, request);
+        PaperResponse response = paperService.updatePaper(paperId, request, actorId(authorizationHeader));
         return ResponseEntity.ok(response);
     }
 
@@ -141,9 +142,10 @@ public class PaperController {
     @PutMapping("/{paperId}/mark-scheme")
     public ResponseEntity<PaperResponse> updateMarkScheme(
             @PathVariable UUID paperId,
-            @Valid @RequestBody MarkSchemeDto request
+            @Valid @RequestBody MarkSchemeDto request,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        PaperResponse response = paperService.updateMarkScheme(paperId, request);
+        PaperResponse response = paperService.updateMarkScheme(paperId, request, actorId(authorizationHeader));
         return ResponseEntity.ok(response);
     }
 
@@ -155,9 +157,21 @@ public class PaperController {
      * @throws dopaminelite.payment_portal.exception.ValidationException if the paper has any paper slots and/or marks recorded against it
      */
     @DeleteMapping("/{paperId}")
-    public ResponseEntity<Void> deletePaper(@PathVariable UUID paperId) {
-        paperService.deletePaper(paperId);
+    public ResponseEntity<Void> deletePaper(
+            @PathVariable UUID paperId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        paperService.deletePaper(paperId, actorId(authorizationHeader));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The admin behind a change, for the audit trail. Null rather than a placeholder when the
+     * token can't be read: an entry that honestly says "unknown" is more useful later than one
+     * that names an id nobody made.
+     */
+    private UUID actorId(String authorizationHeader) {
+        return jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(null);
     }
 
     /**

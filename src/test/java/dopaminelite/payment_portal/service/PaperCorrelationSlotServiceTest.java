@@ -7,9 +7,11 @@ import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.StudentSnapshot;
+import dopaminelite.payment_portal.entity.enums.PaperAuditAction;
 import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.exception.ValidationException;
+import dopaminelite.payment_portal.repository.PaperAuditLogRepository;
 import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.repository.PaperSlotCreationResultRepository;
@@ -57,6 +59,9 @@ class PaperCorrelationSlotServiceTest {
     private PaperService paperService;
 
     @Autowired
+    private PaperAuditLogRepository auditLogRepository;
+
+    @Autowired
     private PaperRepository paperRepository;
 
     @Autowired
@@ -84,6 +89,8 @@ class PaperCorrelationSlotServiceTest {
     private static final LocalDate NEXT_WEDNESDAY = NEXT_MONDAY.plusDays(2);
     private static final LocalDate NEXT_FRIDAY = NEXT_MONDAY.plusDays(4);
 
+    private static final UUID ADMIN_ID = UUID.randomUUID();
+
     private UUID studentId;
 
     @BeforeEach
@@ -98,6 +105,7 @@ class PaperCorrelationSlotServiceTest {
     }
 
     private void cleanUp() {
+        auditLogRepository.deleteAll();
         resultRepository.deleteAll();
         paperSlotRepository.deleteAll();
         paperRepository.deleteAll();
@@ -276,7 +284,7 @@ class PaperCorrelationSlotServiceTest {
         assertThat(paperSlotRepository.findAll()).hasSize(1);
 
         PaperCorrelation correlation = correlation("NOV-W1");
-        paperService.updatePaper(earlyAccess.getId(), updateWithCorrelation(correlation));
+        paperService.updatePaper(earlyAccess.getId(), updateWithCorrelation(correlation), ADMIN_ID);
         paper("Full week", NEXT_MONDAY, NEXT_FRIDAY, correlation, november);
 
         // Without the backfill that first slot would be invisible to the duplicate check and this
@@ -303,13 +311,33 @@ class PaperCorrelationSlotServiceTest {
         assertThat(paperSlotRepository.findAll()).hasSize(2);
 
         assertThatThrownBy(() ->
-                paperService.updatePaper(untagged.getId(), updateWithCorrelation(correlation)))
+                paperService.updatePaper(untagged.getId(), updateWithCorrelation(correlation), ADMIN_ID))
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("Test Student")
                 .hasMessageContaining("STU-001");
 
         // Refused rather than half-applied, and nothing was deleted behind the admin's back.
         assertThat(paperSlotRepository.findAll()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("grouping a paper-event is recorded against the admin who did it")
+    void taggingIsAudited() {
+        PaymentPortal october = portal("October");
+        Paper earlyAccess = paper("Early access", NEXT_MONDAY, NEXT_WEDNESDAY, null, october);
+        PaperCorrelation correlation = correlation("NOV-W1");
+
+        paperService.updatePaper(earlyAccess.getId(), updateWithCorrelation(correlation), ADMIN_ID);
+
+        var trail = auditLogRepository.findByPaperIdOrderByCreatedAtAsc(earlyAccess.getId());
+        assertThat(trail)
+                .singleElement()
+                .satisfies(entry -> {
+                    assertThat(entry.getAction()).isEqualTo(PaperAuditAction.CORRELATION_ATTACHED);
+                    assertThat(entry.getCorrelationId()).isEqualTo(correlation.getId());
+                    assertThat(entry.getActorId()).isEqualTo(ADMIN_ID);
+                    assertThat(entry.getDetails()).contains("NOV-W1");
+                });
     }
 
     /**

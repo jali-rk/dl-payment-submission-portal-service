@@ -31,3 +31,5 @@ databaseChangeLog:
       file: db/changelog/015-widen-mark-precision.yaml
   - include:
       file: db/changelog/016-paper-correlations.yaml
+  - include:
+      file: db/changelog/017-paper-audit-log.yaml
