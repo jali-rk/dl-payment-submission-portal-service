@@ -40,9 +40,26 @@ server:
       context-path: /payment-portal
 
 # BFF Integration Configuration
-# FIXME: Bad design - should use BFF_BASE_URL with internal ALB DNS instead of VITE_API_BASE_URL
+# Prefer BFF_BASE_URL (a real backend-to-backend setting, ideally an internal ALB DNS name) —
+# VITE_API_BASE_URL is kept only as a fallback for any environment that still sets just that
+# one (it's meant for the frontend's own build, not this service, which is exactly how this
+# went unset in at least one deployed environment and silently fell through to the
+# http://localhost:3000 default — nothing listens there in a real deployment, so every BFF
+# call from this service, e.g. student-by-code-number lookups, failed outright).
 bff:
-  base-url: ${VITE_API_BASE_URL:http://localhost:3000}
+  base-url: ${BFF_BASE_URL:${VITE_API_BASE_URL:http://localhost:3000}}
+  # Shared secret for calling BFF-protected endpoints (e.g. /students/by-code-number) as an
+  # internal service, the same way BFF itself authenticates to User Service — must match
+  # BFF's own INTERNAL_SERVICE_TOKEN exactly (BFF falls back to the literal string
+  # "change-me-in-production" if it's unset there — check for that placeholder too, not just
+  # a missing value here).
+  #
+  # NOTE: as of 2026-09-05 this property is no longer read — StudentLookupService hardcodes
+  # the token directly in code instead (see its INTERNAL_SERVICE_TOKEN constant) because in
+  # the deployed dev environment this env var resolves blank at the JVM level despite ECS
+  # showing it correctly wired via Secrets Manager, and the root cause was never confirmed.
+  # Left here for when that's revisited.
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:}
 
 management:
   endpoints:

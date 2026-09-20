@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.repository;
 
+import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.enums.PaperWritingMode;
 import org.springframework.data.domain.Page;
@@ -34,7 +35,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * The slot this student already holds for a correlation, if any — the check that stops a
      * second QR code being issued for a paper they can already sit.
      *
-     * <p>There can only ever be one, enforced by a partial unique index over the same pair;
+     * <p>There can only ever be one, enforced by a unique constraint over the same pair (slots
+     * with no correlation don't collide, since both databases treat NULLs as distinct there);
      * ordering by creation date just makes the outcome deterministic if that were ever bypassed.
      *
      * @param correlationId the correlation to look within
@@ -42,6 +44,44 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * @return their existing slot for that paper, if they have one
      */
     Optional<PaperSlot> findFirstByCorrelationIdAndStudentIdOrderByCreatedAtAsc(UUID correlationId, UUID studentId);
+
+    /**
+     * Slots on this paper-event whose student <em>already</em> holds one in the target
+     * correlation — the students who would end up with two slots for one paper if this
+     * paper-event joined it.
+     *
+     * <p>They already hold two QR codes today, which is the bug this grouping exists to stop; the
+     * grouping just can't be applied over the top of it. Surfaced so the admin can be told exactly
+     * who to sort out rather than being given a bare refusal.
+     *
+     * @param paperId the paper-event about to join
+     * @param correlationId the correlation it would join
+     * @return the colliding slots, submission eagerly fetched for the student's name and code
+     */
+    @Query("SELECT ps FROM PaperSlot ps JOIN FETCH ps.paymentSubmission sub "
+            + "WHERE ps.paper.id = :paperId AND ps.studentId IN "
+            + "(SELECT other.studentId FROM PaperSlot other WHERE other.correlation.id = :correlationId)")
+    List<PaperSlot> findSlotsCollidingWithCorrelation(
+            @Param("paperId") UUID paperId,
+            @Param("correlationId") UUID correlationId);
+
+    /**
+     * Stamps (or clears) the correlation on every slot of a paper-event.
+     *
+     * <p>A slot records its correlation when it is created, and that stamp is what the
+     * duplicate-QR check searches on. So a paper-event that joins a correlation after some of its
+     * slots already exist needs those slots brought along — otherwise they stay invisible to the
+     * check and the student is issued a second code anyway.
+     *
+     * @param paperId the paper-event whose slots to restamp
+     * @param correlation the correlation to stamp, or null when the paper-event is leaving one
+     * @return how many slots were updated
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE PaperSlot ps SET ps.correlation = :correlation WHERE ps.paper.id = :paperId")
+    int stampCorrelationOnSlots(
+            @Param("paperId") UUID paperId,
+            @Param("correlation") PaperCorrelation correlation);
 
     /**
      * Atomically marks a slot as consumed, but only if it is currently unconsumed AND the

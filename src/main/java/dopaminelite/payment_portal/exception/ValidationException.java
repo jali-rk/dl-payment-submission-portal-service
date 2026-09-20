@@ -237,4 +237,23 @@ public class ValidationException extends RuntimeException {
         ));
     }
 
+
+    /**
+     * Factory method for when a paper-event can't join a correlation because some of its students
+     * already hold a slot in it — they were issued two QR codes for one paper before the grouping
+     * existed, and the grouping can't be applied over the top of that.
+     *
+     * @param code the correlation's code
+     * @param count how many students are affected
+     * @param students their names and code numbers
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException correlationSlotCollision(String code, int count, String students) {
+        return new ValidationException(String.format(
+            "Cannot attach to correlation %s: %d student(s) already hold a slot for it, so they would end up "
+            + "with two for the same paper. Cancel the surplus slot for each first: %s",
+            code, count, students
+        ));
+    }
+
 }

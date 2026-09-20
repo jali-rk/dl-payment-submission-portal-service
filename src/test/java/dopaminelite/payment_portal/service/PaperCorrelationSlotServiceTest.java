@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.service;
 
+import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaperSlot;
@@ -8,6 +9,7 @@ import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.StudentSnapshot;
 import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
+import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.repository.PaperSlotCreationResultRepository;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers the reason correlations exist: a paper sat in the first week of a month is created as two
@@ -51,6 +54,9 @@ class PaperCorrelationSlotServiceTest {
     private PaperSlotService paperSlotService;
 
     @Autowired
+    private PaperService paperService;
+
+    @Autowired
     private PaperRepository paperRepository;
 
     @Autowired
@@ -71,6 +77,12 @@ class PaperCorrelationSlotServiceTest {
     private static final LocalDate MONDAY = LocalDate.now().minusDays(1);
     private static final LocalDate WEDNESDAY = MONDAY.plusDays(2);
     private static final LocalDate FRIDAY = MONDAY.plusDays(4);
+
+    // Next month's paper, still ahead of its window - the shape of a paper-event that can still be
+    // moved into a correlation, and the only one late tagging ever applies to.
+    private static final LocalDate NEXT_MONDAY = LocalDate.now().plusDays(7);
+    private static final LocalDate NEXT_WEDNESDAY = NEXT_MONDAY.plusDays(2);
+    private static final LocalDate NEXT_FRIDAY = NEXT_MONDAY.plusDays(4);
 
     private UUID studentId;
 
@@ -252,6 +264,54 @@ class PaperCorrelationSlotServiceTest {
                 .containsExactlyInAnyOrder(septemberPayment, octoberPayment);
     }
 
+    @Test
+    @DisplayName("tagging a paper-event late brings its existing slots into the correlation")
+    void taggingLate_backfillsExistingSlots() {
+        PaymentPortal october = portal("October");
+        PaymentPortal november = portal("November");
+        // The early-access sitting goes live and starts issuing slots before anyone thinks to
+        // group it - the case the backfill exists for.
+        Paper earlyAccess = paper("Early access", NEXT_MONDAY, NEXT_WEDNESDAY, null, october);
+        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(october).getId());
+        assertThat(paperSlotRepository.findAll()).hasSize(1);
+
+        PaperCorrelation correlation = correlation("NOV-W1");
+        paperService.updatePaper(earlyAccess.getId(), updateWithCorrelation(correlation));
+        paper("Full week", NEXT_MONDAY, NEXT_FRIDAY, correlation, november);
+
+        // Without the backfill that first slot would be invisible to the duplicate check and this
+        // student would walk away with a second QR code.
+        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(november).getId());
+
+        List<PaperSlot> slots = paperSlotRepository.findAll();
+        assertThat(slots).hasSize(1);
+        assertThat(effectiveEnd(slots.get(0))).isEqualTo(NEXT_FRIDAY);
+    }
+
+    @Test
+    @DisplayName("tagging is refused, naming the student, when it would leave someone holding two slots")
+    void taggingLate_refusedWhenItWouldDuplicate() {
+        PaperCorrelation correlation = correlation("NOV-W1");
+        PaymentPortal october = portal("October");
+        PaymentPortal november = portal("November");
+        // This sitting was grouped from the start; the other never was, so the student who paid
+        // both months already holds two codes.
+        Paper untagged = paper("Early access", NEXT_MONDAY, NEXT_WEDNESDAY, null, october);
+        paper("Full week", NEXT_MONDAY, NEXT_FRIDAY, correlation, november);
+        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(october).getId());
+        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(november).getId());
+        assertThat(paperSlotRepository.findAll()).hasSize(2);
+
+        assertThatThrownBy(() ->
+                paperService.updatePaper(untagged.getId(), updateWithCorrelation(correlation)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Test Student")
+                .hasMessageContaining("STU-001");
+
+        // Refused rather than half-applied, and nothing was deleted behind the admin's back.
+        assertThat(paperSlotRepository.findAll()).hasSize(2);
+    }
+
     /**
      * The slot's usable end date, resolved without an open session: the entities these tests read
      * back are detached, so {@code PaperSlot.effectiveEndDate()} can't lazily load its paper here
@@ -264,6 +324,12 @@ class PaperCorrelationSlotServiceTest {
     }
 
     // --- fixtures ---------------------------------------------------------------------------
+
+    private PaperUpdateRequest updateWithCorrelation(PaperCorrelation correlation) {
+        PaperUpdateRequest request = new PaperUpdateRequest();
+        request.setCorrelationId(correlation.getId());
+        return request;
+    }
 
     private PaperCorrelation correlation(String code) {
         PaperCorrelation correlation = new PaperCorrelation();

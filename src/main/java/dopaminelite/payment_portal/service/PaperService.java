@@ -9,7 +9,9 @@ import dopaminelite.payment_portal.dto.paper.PaperWindowFilter;
 import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperCorrelation;
+import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaymentPortal;
+import dopaminelite.payment_portal.entity.StudentSnapshot;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMapper;
@@ -29,6 +31,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing paper business logic: creation, retrieval, updates, and validation.
@@ -276,16 +279,12 @@ public class PaperService {
      *       decides who gets a QR code for what.</li>
      *   <li><b>It has marks of its own.</b> Those belong to this paper-event; joining a
      *       correlation moves grading to the correlation and would strand them, invisible.</li>
-     *   <li><b>It has slots of its own.</b> A slot records its correlation when it is created, and
-     *       that record is what stops a second QR being issued for the same paper. Slots created
-     *       before the move carry no correlation, so they'd never be found — and the duplicate
-     *       this feature exists to prevent would happen anyway.</li>
      * </ul>
      *
-     * <p>Note the third condition is about <em>this paper-event's</em> slots, not the
-     * correlation's. Joining a correlation that already has slots from its other sitting is the
-     * normal case — it is exactly how the second sitting is added once the first month's payments
-     * have started being approved.
+     * <p>Existing slots are no obstacle — they are brought along. A slot records its correlation
+     * when it is created, and that stamp is what the duplicate-QR check searches on, so slots
+     * predating the move are restamped here rather than left invisible to it. That is what makes
+     * tagging safe at any point, including as a repair once payments are already flowing.
      */
     private void applyCorrelationChange(Paper paper, PaperCorrelation correlation) {
         if (correlation.equals(paper.getCorrelation())) {
@@ -297,12 +296,40 @@ public class PaperService {
         if (paperMarkRepository.countByPaperId(paper.getId()) > 0) {
             throw ValidationException.correlationChangeNotAllowed(paper.getId(), "it already has marks of its own");
         }
-        if (paperSlotRepository.existsByPaperId(paper.getId())) {
-            throw ValidationException.correlationChangeNotAllowed(
-                    paper.getId(), "slots have already been issued for it");
-        }
+
+        requireNoSlotCollision(paper, correlation);
 
         paper.setCorrelation(correlation);
+        paperRepository.saveAndFlush(paper);
+        paperSlotRepository.stampCorrelationOnSlots(paper.getId(), correlation);
+    }
+
+    /**
+     * Refuses the move when a student would end up holding two slots for one paper.
+     *
+     * <p>Only possible where they already do: they paid both months and the other sitting was
+     * already grouped, so they were issued two QR codes before this grouping could stop it. The
+     * database won't let one student hold two slots in a correlation, and nothing here should
+     * quietly delete a code a student may already be carrying — so the admin is told exactly who
+     * is affected and decides which to cancel.
+     */
+    private void requireNoSlotCollision(Paper paper, PaperCorrelation correlation) {
+        List<PaperSlot> colliding =
+                paperSlotRepository.findSlotsCollidingWithCorrelation(paper.getId(), correlation.getId());
+        if (colliding.isEmpty()) {
+            return;
+        }
+
+        String students = colliding.stream()
+                .map(slot -> {
+                    StudentSnapshot snapshot = slot.getPaymentSubmission().getStudentSnapshot();
+                    return snapshot.getCodeNumber() == null
+                            ? snapshot.getFullName()
+                            : String.format("%s (%s)", snapshot.getFullName(), snapshot.getCodeNumber());
+                })
+                .collect(Collectors.joining(", "));
+
+        throw ValidationException.correlationSlotCollision(correlation.getCode(), colliding.size(), students);
     }
 
     /**
