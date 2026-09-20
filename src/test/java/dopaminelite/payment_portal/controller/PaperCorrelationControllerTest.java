@@ -8,9 +8,12 @@ import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperMarkCreateRequest;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperCorrelation;
+import dopaminelite.payment_portal.entity.PaymentPortal;
+import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperMarkRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
+import dopaminelite.payment_portal.repository.PaymentPortalRepository;
 import dopaminelite.payment_portal.service.StudentLookupService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +65,9 @@ class PaperCorrelationControllerTest {
 
     @Autowired
     private PaperMarkRepository paperMarkRepository;
+
+    @Autowired
+    private PaymentPortalRepository portalRepository;
 
     @MockitoBean
     private StudentLookupService studentLookupService;
@@ -216,7 +222,38 @@ class PaperCorrelationControllerTest {
                 .andExpect(jsonPath("$.message", containsString("mark(s) already exist")));
     }
 
+    @Test
+    @DisplayName("joining with the same scheme written at a different scale is accepted")
+    void joiningWithSameSchemeAtDifferentScale_isAccepted() throws Exception {
+        PaperCorrelation correlation = correlation("OCT-W1");
+        // Stored the way the numeric(9,3) column hands it back.
+        correlation.setMcqMaxMarks(new BigDecimal("40.000"));
+        correlationRepository.saveAndFlush(correlation);
+
+        // Sent the way an admin types it - and the way Duplicate prefills it.
+        mockMvc.perform(post("/papers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {"title":"Second sitting","startDate":"%s","endDate":"%s",
+                                 "linkedPortalIds":["%s"],"correlationId":"%s",
+                                 "markScheme":{"mcqMaxMarks":40}}""",
+                                LocalDate.now().plusDays(7), LocalDate.now().plusDays(11),
+                                portal().getId(), correlation.getId())))
+                .andExpect(status().isCreated());
+    }
+
     // --- fixtures ---------------------------------------------------------------------------
+
+    private PaymentPortal portal() {
+        PaymentPortal portal = new PaymentPortal();
+        portal.setMonth(9);
+        portal.setYear(2030);
+        portal.setName("scale-test-" + UUID.randomUUID());
+        portal.setDisplayName("Scale Test Portal");
+        portal.setIsPublished(true);
+        portal.setVisibility(PortalVisibility.PUBLISHED);
+        return portalRepository.saveAndFlush(portal);
+    }
 
     private PaperCorrelation correlation(String code) {
         PaperCorrelation correlation = new PaperCorrelation();

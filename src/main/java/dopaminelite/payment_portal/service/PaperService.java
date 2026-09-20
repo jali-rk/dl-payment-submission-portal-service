@@ -28,9 +28,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -419,12 +419,27 @@ public class PaperService {
             return;
         }
 
-        boolean same = Objects.equals(correlation.getMcqMaxMarks(), scheme.getMcqMaxMarks())
-                && Objects.equals(correlation.getStructuredMaxMarks(), scheme.getStructuredMaxMarks())
-                && Objects.equals(correlation.getEssayMaxMarks(), scheme.getEssayMaxMarks());
+        boolean same = sameMaxMark(correlation.getMcqMaxMarks(), scheme.getMcqMaxMarks())
+                && sameMaxMark(correlation.getStructuredMaxMarks(), scheme.getStructuredMaxMarks())
+                && sameMaxMark(correlation.getEssayMaxMarks(), scheme.getEssayMaxMarks());
         if (!same) {
             throw ValidationException.correlationMarkSchemeMismatch(correlation.getCode());
         }
+    }
+
+    /**
+     * Compares two max marks by value, not by representation.
+     *
+     * <p>{@code BigDecimal.equals} also compares scale, so the 40.000 that comes back from a
+     * {@code numeric(9,3)} column is "different" from the 40 an admin typed. That would reject a
+     * sitting joining with the very scheme it is meant to share — most obviously when a paper-event
+     * is duplicated, since the copy arrives prefilled with the original's marks.
+     */
+    private boolean sameMaxMark(BigDecimal stored, BigDecimal submitted) {
+        if (stored == null || submitted == null) {
+            return stored == submitted;
+        }
+        return stored.compareTo(submitted) == 0;
     }
 
     private void applyMarkScheme(MarkOwner owner, MarkSchemeDto scheme) {
