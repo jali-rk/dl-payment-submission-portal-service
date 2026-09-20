@@ -230,6 +230,28 @@ class PaperCorrelationSlotServiceTest {
         assertThat(slots).allSatisfy(slot -> assertThat(slot.getValidUntil()).isNull());
     }
 
+    @Test
+    @DisplayName("the one QR code is reported as covering both payments that entitle the student to it")
+    void extendedSlot_reportsBothPaymentsItCovers() {
+        PaperCorrelation correlation = correlation("OCT-W1");
+        PaymentPortal september = portal("September");
+        PaymentPortal october = portal("October");
+        paper("Early access", MONDAY, WEDNESDAY, correlation, september);
+        paper("Full week", MONDAY, FRIDAY, correlation, october);
+
+        UUID septemberPayment = approvedSubmission(september).getId();
+        UUID octoberPayment = approvedSubmission(october).getId();
+        paperSlotService.createSlotsForApprovedSubmission(septemberPayment);
+        paperSlotService.createSlotsForApprovedSubmission(octoberPayment);
+
+        var slots = paperSlotService.listSlots(null, studentId, null, null, 20, 0);
+
+        assertThat(slots.getItems()).hasSize(1);
+        // Both months' cards on the student's payments page need to show this one code.
+        assertThat(slots.getItems().get(0).getCoveredSubmissionIds())
+                .containsExactlyInAnyOrder(septemberPayment, octoberPayment);
+    }
+
     /**
      * The slot's usable end date, resolved without an open session: the entities these tests read
      * back are detached, so {@code PaperSlot.effectiveEndDate()} can't lazily load its paper here

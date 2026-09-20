@@ -35,7 +35,11 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -257,8 +261,34 @@ public class PaperSlotService {
         List<PaperSlotResponse> items = page.getContent().stream()
                 .map(slot -> paperSlotMapper.toResponse(slot, today))
                 .toList();
+        attachCoveredSubmissions(items);
 
         return new PaginatedResponse<>(items, page.getTotalElements());
+    }
+
+    /**
+     * Fills in which payments each slot covers, in one query for the whole page rather than one
+     * per slot. Usually just the payment that created it; two when a later payment extended this
+     * slot instead of issuing a second QR code, which is what lets the student's payments page
+     * show the one code under both months.
+     */
+    private void attachCoveredSubmissions(List<PaperSlotResponse> items) {
+        if (items.isEmpty()) {
+            return;
+        }
+
+        List<UUID> slotIds = items.stream().map(PaperSlotResponse::getId).toList();
+        Map<UUID, Set<UUID>> submissionsBySlot = new HashMap<>();
+        resultRepository.findSubmissionRefsBySlotIds(slotIds).forEach(ref ->
+                submissionsBySlot.computeIfAbsent(ref.getSlotId(), key -> new LinkedHashSet<>())
+                        .add(ref.getSubmissionId()));
+
+        items.forEach(item -> {
+            // The creating payment always counts, even for slots predating creation-result rows.
+            Set<UUID> covered = submissionsBySlot.computeIfAbsent(item.getId(), key -> new LinkedHashSet<>());
+            covered.add(item.getSubmissionId());
+            item.setCoveredSubmissionIds(List.copyOf(covered));
+        });
     }
 
     /**

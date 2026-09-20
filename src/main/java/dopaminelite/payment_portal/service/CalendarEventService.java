@@ -10,6 +10,7 @@ import dopaminelite.payment_portal.entity.CalendarEvent;
 import dopaminelite.payment_portal.entity.CalendarEventAttendee;
 import dopaminelite.payment_portal.entity.CalendarEventClass;
 import dopaminelite.payment_portal.entity.Paper;
+import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.enums.CalendarSourceType;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
@@ -28,13 +29,16 @@ import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for calendar events: full CRUD over {@code USER} events (owner-only), and the
@@ -120,10 +124,70 @@ public class CalendarEventService {
                     .forEach(e -> events.put(e.getId(), e));
         }
 
-        return events.values().stream()
+        List<CalendarEventResponse> responses = events.values().stream()
                 .sorted(Comparator.comparing(CalendarEvent::getStartAt))
                 .map(calendarEventMapper::toResponse)
-                .toList();
+                .collect(Collectors.toList());
+
+        // A MAIN_ADMIN is the one who creates the sittings and needs to tell them apart, so they
+        // keep seeing both. Everyone else is shown the paper, not its scheduling.
+        return "MAIN_ADMIN".equalsIgnoreCase(role) ? responses : mergeCorrelatedPaperEvents(events, responses);
+    }
+
+    /**
+     * Collapses the paper-events of one correlation into a single calendar entry.
+     *
+     * <p>The same real paper is scheduled twice — an early-access window for students who paid
+     * last month, the full window for those paying this month — so without this a student who paid
+     * both months sees the same paper twice on their calendar, under two titles, with two
+     * different end dates. The surviving entry is titled with the correlation's display name and
+     * spans from the earliest start to the latest end of the sittings the viewer can see, which
+     * for a student is exactly the window their own slot covers.
+     */
+    private List<CalendarEventResponse> mergeCorrelatedPaperEvents(
+            Map<UUID, CalendarEvent> events, List<CalendarEventResponse> responses) {
+
+        Map<UUID, PaperCorrelation> correlationsByEventId = new HashMap<>();
+        events.forEach((eventId, event) -> {
+            if (event.getSourceType() == CalendarSourceType.PAPER
+                    && event.getSourcePaper() != null
+                    && event.getSourcePaper().getCorrelation() != null) {
+                correlationsByEventId.put(eventId, event.getSourcePaper().getCorrelation());
+            }
+        });
+
+        if (correlationsByEventId.isEmpty()) {
+            return responses;
+        }
+
+        Map<UUID, CalendarEventResponse> mergedByCorrelation = new LinkedHashMap<>();
+        List<CalendarEventResponse> result = new ArrayList<>();
+
+        for (CalendarEventResponse response : responses) {
+            PaperCorrelation correlation = correlationsByEventId.get(response.getId());
+            if (correlation == null) {
+                result.add(response);
+                continue;
+            }
+
+            CalendarEventResponse existing = mergedByCorrelation.get(correlation.getId());
+            if (existing == null) {
+                response.setTitle(correlation.getDisplayName());
+                mergedByCorrelation.put(correlation.getId(), response);
+                result.add(response);
+            } else {
+                // Widen the kept entry to cover this sitting too, rather than adding a second one.
+                if (response.getStartAt().isBefore(existing.getStartAt())) {
+                    existing.setStartAt(response.getStartAt());
+                }
+                if (response.getEndAt().isAfter(existing.getEndAt())) {
+                    existing.setEndAt(response.getEndAt());
+                }
+            }
+        }
+
+        result.sort(Comparator.comparing(CalendarEventResponse::getStartAt));
+        return result;
     }
 
     @Transactional

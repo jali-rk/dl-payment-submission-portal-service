@@ -19,6 +19,28 @@ public interface PaperSlotCreationResultRepository extends JpaRepository<PaperSl
     Optional<PaperSlotCreationResult> findByPaymentSubmissionIdAndPaperId(UUID paymentSubmissionId, UUID paperId);
 
     /**
+     * The payments that each of these slots covers.
+     *
+     * <p>Normally one, but a slot extended across a correlation is the single QR code for two
+     * payments — the student paid in two months for the same paper. The student's payments page
+     * lists QR codes under the payment that produced them, so without this the second month's card
+     * would show nothing and look as though that payment gave them no paper.
+     *
+     * @param slotIds the slots to look up
+     * @return one row per (slot, payment) pair
+     */
+    @Query("SELECT r.paperSlot.id AS slotId, r.paymentSubmission.id AS submissionId "
+            + "FROM PaperSlotCreationResult r WHERE r.paperSlot.id IN :slotIds")
+    List<SlotSubmissionRef> findSubmissionRefsBySlotIds(@Param("slotIds") List<UUID> slotIds);
+
+    /** Projection for {@link #findSubmissionRefsBySlotIds}. */
+    interface SlotSubmissionRef {
+        UUID getSlotId();
+
+        UUID getSubmissionId();
+    }
+
+    /**
      * Finds all creation-result rows for a submission, with paper/slot/submission/portal
      * eagerly fetched so the mapper can build full nested details without extra queries.
      *
