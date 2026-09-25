@@ -170,4 +170,32 @@ class PaperMarkRepositoryTest {
         assertThat(paperMarkRepository.findByStudentId(UUID.randomUUID())).isEmpty();
     }
 
+    @Test
+    @DisplayName("findByOwnerIdAndEnteredByInstructorId narrows to that instructor's own entries on the paper")
+    void findByOwnerIdAndEnteredByInstructorId_scopedToInstructor() {
+        UUID instructorA = UUID.randomUUID();
+        UUID instructorB = UUID.randomUUID();
+
+        PaperMark markByA = newMark(paper, studentId);
+        markByA.setEnteredByInstructorId(instructorA);
+        entityManager.persist(markByA);
+
+        PaperMark markByB = newMark(paper, UUID.randomUUID());
+        markByB.setEnteredByInstructorId(instructorB);
+        entityManager.persist(markByB);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+        var page = paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(paper.getId(), instructorA, pageable);
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+        assertThat(page.getContent().get(0).getEnteredByInstructorId()).isEqualTo(instructorA);
+
+        // An instructor with no entries on this paper gets an empty page, not an error.
+        var emptyPage = paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(
+                paper.getId(), UUID.randomUUID(), pageable);
+        assertThat(emptyPage.getTotalElements()).isZero();
+    }
+
 }
