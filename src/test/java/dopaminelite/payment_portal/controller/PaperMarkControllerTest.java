@@ -22,7 +22,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,6 +63,10 @@ class PaperMarkControllerTest {
 
     private static final UUID KNOWN_STUDENT_ID = UUID.randomUUID();
     private static final String KNOWN_CODE_NUMBER = "STU-001";
+    private static final UUID OTHER_STUDENT_ID = UUID.randomUUID();
+    private static final String OTHER_CODE_NUMBER = "STU-002";
+    private static final UUID INSTRUCTOR_A_ID = UUID.randomUUID();
+    private static final UUID INSTRUCTOR_B_ID = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
@@ -71,8 +77,21 @@ class PaperMarkControllerTest {
                 KNOWN_STUDENT_ID, "Test Student", "student@example.com", "0770000000", KNOWN_CODE_NUMBER);
         org.mockito.Mockito.when(studentLookupService.findByCodeNumber(KNOWN_CODE_NUMBER))
                 .thenReturn(Optional.of(knownStudent));
+        StudentLookupDto otherStudent = new StudentLookupDto(
+                OTHER_STUDENT_ID, "Other Student", "other@example.com", "0770000001", OTHER_CODE_NUMBER);
+        org.mockito.Mockito.when(studentLookupService.findByCodeNumber(OTHER_CODE_NUMBER))
+                .thenReturn(Optional.of(otherStudent));
         org.mockito.Mockito.when(studentLookupService.findByCodeNumber("NO-SUCH-STUDENT"))
                 .thenReturn(Optional.empty());
+    }
+
+    /** Builds an unsigned test JWT carrying only the {@code id} claim {@link dopaminelite.payment_portal.util.JwtUserIdExtractor} reads. */
+    private String bearerTokenFor(UUID userId) {
+        String header = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(("{\"id\":\"" + userId + "\"}").getBytes(StandardCharsets.UTF_8));
+        return "Bearer " + header + "." + payload + ".";
     }
 
     private Paper createPaperWithScheme(BigDecimal mcqMax, BigDecimal structuredMax, BigDecimal essayMax) {
@@ -261,6 +280,104 @@ class PaperMarkControllerTest {
                         .content(objectMapper.writeValueAsString(newScheme)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.markScheme.mcqMaxMarks").value(30.000));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks?onlyMine=true - Narrows the list to the caller's own entries")
+    void testListMarks_OnlyMine_FiltersToCallerInstructor() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2));
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].studentId").value(KNOWN_STUDENT_ID.toString()));
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].studentId").value(OTHER_STUDENT_ID.toString()));
+    }
+
+    @Test
+    @DisplayName("PATCH /papers/{paperId}/marks/{markId} - An INSTRUCTOR cannot edit another instructor's mark")
+    void testUpdateMark_Forbidden_WhenEnteredByAnotherInstructor() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
+        update.setTotalMarks(new BigDecimal("90.000"));
+
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .param("callerRole", "INSTRUCTOR")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        // The instructor who entered it can still edit it
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .param("callerRole", "INSTRUCTOR")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalMarks").value(90.000));
+    }
+
+    @Test
+    @DisplayName("DELETE /papers/{paperId}/marks/{markId} - An INSTRUCTOR cannot delete another instructor's mark")
+    void testDeleteMark_Forbidden_WhenEnteredByAnotherInstructor() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        mockMvc.perform(delete("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .param("callerRole", "INSTRUCTOR")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        // A main admin isn't held to the same-instructor restriction
+        mockMvc.perform(delete("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .param("callerRole", "MAIN_ADMIN")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isNoContent());
     }
 
 }

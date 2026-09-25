@@ -14,6 +14,7 @@ import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.MarkStudentSnapshot;
 import dopaminelite.payment_portal.entity.PaperMark;
 import dopaminelite.payment_portal.exception.DuplicateResourceException;
+import dopaminelite.payment_portal.exception.ForbiddenException;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMarkMapper;
@@ -64,14 +65,18 @@ public class PaperMarkService {
      * @param paperId the paper's ID
      * @param limit maximum number of results per page
      * @param offset number of results to skip
+     * @param onlyMineInstructorId when non-null, narrows the list to marks this instructor
+     *        entered themselves — backs the marks page's "You" / "All" toggle
      * @return paginated response containing the mark list and total count
      * @throws ResourceNotFoundException if no paper exists with the given ID
      */
-    public PaginatedResponse<PaperMarkResponse> listMarks(UUID paperId, int limit, int offset) {
+    public PaginatedResponse<PaperMarkResponse> listMarks(UUID paperId, int limit, int offset, UUID onlyMineInstructorId) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<PaperMark> page = paperMarkRepository.findByOwnerId(owner.getId(), pageable);
+        Page<PaperMark> page = onlyMineInstructorId != null
+                ? paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(owner.getId(), onlyMineInstructorId, pageable)
+                : paperMarkRepository.findByOwnerId(owner.getId(), pageable);
 
         List<PaperMarkResponse> items = page.getContent().stream()
                 .map(paperMarkMapper::toResponse)
@@ -176,17 +181,23 @@ public class PaperMarkService {
      * @param markId the mark's ID
      * @param request the fields to update
      * @param instructorId the ID of the instructor making the edit
+     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only edit
+     *        marks they themselves entered; ADMIN/MAIN_ADMIN are exempt from that restriction
      * @return the updated mark
      * @throws ResourceNotFoundException if no mark exists with the given ID for that paper
+     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      * @throws ValidationException if an updated value is out-of-bounds or for a disabled section
      */
     @Transactional
-    public PaperMarkResponse updateMark(UUID paperId, UUID markId, PaperMarkUpdateRequest request, UUID instructorId) {
+    public PaperMarkResponse updateMark(UUID paperId, UUID markId, PaperMarkUpdateRequest request,
+                                         UUID instructorId, String callerRole) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
+
+        requireOwnMarkIfInstructor(mark, instructorId, callerRole);
 
         // Deliberately the resolved owner's scheme rather than mark.getPaper()'s: a
         // correlation-owned mark has no paper at all, and reading one off it would NPE.
@@ -218,17 +229,43 @@ public class PaperMarkService {
      *
      * @param paperId the paper's ID
      * @param markId the mark's ID
+     * @param instructorId the ID of the instructor making the request
+     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only delete
+     *        marks they themselves entered; ADMIN/MAIN_ADMIN are exempt from that restriction
      * @throws ResourceNotFoundException if no mark exists with the given ID for that paper
+     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      */
     @Transactional
-    public void deleteMark(UUID paperId, UUID markId) {
+    public void deleteMark(UUID paperId, UUID markId, UUID instructorId, String callerRole) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
 
+        requireOwnMarkIfInstructor(mark, instructorId, callerRole);
+
         paperMarkRepository.delete(mark);
+    }
+
+    /**
+     * Enforces that an INSTRUCTOR caller only edits/deletes marks they themselves entered.
+     * ADMIN and MAIN_ADMIN are exempt — they're already trusted with everything else about a
+     * paper (its mark scheme, its deletion), so restricting them here would only get in the way
+     * of fixing another instructor's mistake.
+     *
+     * @param mark the mark being edited or deleted
+     * @param callerId the caller's ID
+     * @param callerRole the caller's role, forwarded by the BFF
+     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
+     */
+    private void requireOwnMarkIfInstructor(PaperMark mark, UUID callerId, String callerRole) {
+        if (!"INSTRUCTOR".equalsIgnoreCase(callerRole)) {
+            return;
+        }
+        if (!mark.getEnteredByInstructorId().equals(callerId)) {
+            throw ForbiddenException.notYourMark(mark.getId());
+        }
     }
 
     /**

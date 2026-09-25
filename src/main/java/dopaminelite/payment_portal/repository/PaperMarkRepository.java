@@ -74,6 +74,22 @@ public interface PaperMarkRepository extends JpaRepository<PaperMark, UUID> {
     Page<PaperMark> findByOwnerId(@Param("ownerId") UUID ownerId, Pageable pageable);
 
     /**
+     * Same as {@link #findByOwnerId} but narrowed to the marks a specific instructor entered —
+     * backs the marks page's "You" filter, letting an instructor see only their own entries
+     * among a paper's marks.
+     *
+     * @param ownerId the paper-event's or correlation's ID
+     * @param instructorId the instructor whose entries to return
+     * @param pageable pagination information
+     * @return a page of matching marks
+     */
+    @Query("SELECT m FROM PaperMark m LEFT JOIN FETCH m.paper LEFT JOIN FETCH m.correlation "
+            + "WHERE (m.paper.id = :ownerId OR m.correlation.id = :ownerId) "
+            + "AND m.enteredByInstructorId = :instructorId ORDER BY m.createdAt DESC")
+    Page<PaperMark> findByOwnerIdAndEnteredByInstructorId(
+            @Param("ownerId") UUID ownerId, @Param("instructorId") UUID instructorId, Pageable pageable);
+
+    /**
      * All marks for an owner ordered by total marks descending — the input ordering for
      * leaderboard rank generation.
      *
