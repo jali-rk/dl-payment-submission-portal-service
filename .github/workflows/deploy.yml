@@ -5,18 +5,19 @@ on:
     branches:
       - dev
       - main
+      - sbx
 
 jobs:
   deploy:
     name: Deploy (${{ github.ref_name }})
     runs-on: ubuntu-latest
 
-    # Safety guard: this workflow should only deploy from dev or main.
-    if: ${{ github.ref_name == 'dev' || github.ref_name == 'main' }}
+    # Safety guard: this workflow should only deploy from dev, main, or sbx.
+    if: ${{ github.ref_name == 'dev' || github.ref_name == 'main' || github.ref_name == 'sbx' }}
 
-    # Map branch -> GitHub Environment. Create Environments named: dev, prod
+    # Map branch -> GitHub Environment. Create Environments named: dev, prod, sbx
     environment:
-      name: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+      name: ${{ github.ref_name == 'main' && 'prod' || (github.ref_name == 'sbx' && 'sbx' || 'dev') }}
 
     permissions:
       contents: read
@@ -62,7 +63,7 @@ jobs:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
           ECS_SERVICE: ${{ vars.ECS_SERVICE }}
-          DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+          DEPLOY_ENV: ${{ github.ref_name == 'main' && 'prod' || (github.ref_name == 'sbx' && 'sbx' || 'dev') }}
         run: |
           set -euo pipefail
 
