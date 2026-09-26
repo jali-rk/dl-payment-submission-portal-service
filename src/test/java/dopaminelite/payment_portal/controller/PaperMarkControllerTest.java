@@ -387,6 +387,100 @@ class PaperMarkControllerTest {
     }
 
     @Test
+    @DisplayName("GET /papers/{paperId}/marks?studentCodeNumber= - Finds one student's mark, whoever entered it")
+    void testListMarks_SearchByStudentCodeNumber() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        // Entered by A
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        // Entered by B, for a different student
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        // A searching for the student whose mark B entered still finds it — looking up any
+        // student is allowed; only changing someone else's mark is not.
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].student.codeNumber").value(OTHER_CODE_NUMBER))
+                .andExpect(jsonPath("$.items[0].enteredByInstructorId").value(INSTRUCTOR_B_ID.toString()));
+
+        // A code with no mark on this paper is an empty list, not a 404
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", "NO-SUCH-CODE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks?studentCodeNumber= - Trims surrounding whitespace and ignores case")
+    void testListMarks_SearchTrimsAndIgnoresCase() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        // A code pasted from a message or typed on a phone keyboard often carries a stray space
+        for (String typed : new String[]{" " + KNOWN_CODE_NUMBER, KNOWN_CODE_NUMBER + " ",
+                "  " + KNOWN_CODE_NUMBER + "  ", KNOWN_CODE_NUMBER.toLowerCase()}) {
+            mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                            .param("studentCodeNumber", typed))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.total").value(1));
+        }
+
+        // A blank search is no search at all, rather than a search for nothing
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", "   "))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks - Search narrows within the onlyMine filter when both are set")
+    void testListMarks_SearchCombinesWithOnlyMine() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        // Narrowed to A's own entries, B's mark is out of scope even when searched for by code
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+
+        // ...and B finds their own
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    @Test
     @DisplayName("PATCH /papers/{paperId}/marks/{markId} - Should reject an updated section mark above its configured max")
     void testUpdateMark_ExceedsSectionMax() throws Exception {
         Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);

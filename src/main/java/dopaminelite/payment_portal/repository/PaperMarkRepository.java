@@ -62,32 +62,37 @@ public interface PaperMarkRepository extends JpaRepository<PaperMark, UUID> {
     Optional<PaperMark> findByIdAndOwnerId(@Param("id") UUID id, @Param("ownerId") UUID ownerId);
 
     /**
-     * Finds marks for an owner, eagerly fetching both possible owning sides so the mapper never
-     * triggers a lazy load.
+     * The marks page's list query: an owner's marks, optionally narrowed to one instructor's own
+     * entries and/or to a single student's code number. Both owning sides are eagerly fetched so
+     * the mapper never triggers a lazy load.
+     *
+     * <p>The filters are optional rather than split across four methods, following
+     * {@code PaperRepository.findByFilters}. Code number is matched in full, not as a substring —
+     * an instructor types a whole code to pull up one student — and case-insensitively, so a code
+     * typed in lower case still finds its mark.
+     *
+     * <p>Ordering carries {@code m.id} as a tiebreaker: marks recorded in the same instant would
+     * otherwise come back in an arbitrary order, letting a row shift between pages and so appear
+     * twice or not at all while paging.
      *
      * @param ownerId the paper-event's or correlation's ID
-     * @param pageable pagination information
-     * @return a page of matching marks
-     */
-    @Query("SELECT m FROM PaperMark m LEFT JOIN FETCH m.paper LEFT JOIN FETCH m.correlation "
-            + "WHERE m.paper.id = :ownerId OR m.correlation.id = :ownerId ORDER BY m.createdAt DESC")
-    Page<PaperMark> findByOwnerId(@Param("ownerId") UUID ownerId, Pageable pageable);
-
-    /**
-     * Same as {@link #findByOwnerId} but narrowed to the marks a specific instructor entered —
-     * backs the marks page's "You" filter, letting an instructor see only their own entries
-     * among a paper's marks.
-     *
-     * @param ownerId the paper-event's or correlation's ID
-     * @param instructorId the instructor whose entries to return
+     * @param instructorId only this instructor's entries, or null for every instructor's
+     * @param studentCodeNumber only this student's mark, or null for every student's; expected
+     *        already trimmed, since a stray space would match nothing
      * @param pageable pagination information
      * @return a page of matching marks
      */
     @Query("SELECT m FROM PaperMark m LEFT JOIN FETCH m.paper LEFT JOIN FETCH m.correlation "
             + "WHERE (m.paper.id = :ownerId OR m.correlation.id = :ownerId) "
-            + "AND m.enteredByInstructorId = :instructorId ORDER BY m.createdAt DESC")
-    Page<PaperMark> findByOwnerIdAndEnteredByInstructorId(
-            @Param("ownerId") UUID ownerId, @Param("instructorId") UUID instructorId, Pageable pageable);
+            + "AND (:instructorId IS NULL OR m.enteredByInstructorId = :instructorId) "
+            + "AND (:studentCodeNumber IS NULL OR LOWER(m.studentSnapshot.codeNumber) "
+            + "     = LOWER(CAST(:studentCodeNumber AS string))) "
+            + "ORDER BY m.createdAt DESC, m.id ASC")
+    Page<PaperMark> findByFilters(
+            @Param("ownerId") UUID ownerId,
+            @Param("instructorId") UUID instructorId,
+            @Param("studentCodeNumber") String studentCodeNumber,
+            Pageable pageable);
 
     /**
      * All marks for an owner ordered by total marks descending — the input ordering for

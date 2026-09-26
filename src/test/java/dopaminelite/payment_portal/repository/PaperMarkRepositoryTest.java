@@ -122,8 +122,8 @@ class PaperMarkRepositoryTest {
     }
 
     @Test
-    @DisplayName("findByOwnerId returns marks for that paper only, eagerly fetching the paper")
-    void findByOwnerId_returnsMarksForPaper() {
+    @DisplayName("findByFilters with no filters returns marks for that paper only, eagerly fetching the paper")
+    void findByFilters_returnsMarksForPaper() {
         entityManager.persist(newMark(paper, studentId));
 
         Paper otherPaper = new Paper();
@@ -136,7 +136,7 @@ class PaperMarkRepositoryTest {
         entityManager.clear();
 
         Pageable pageable = PageRequest.of(0, 10);
-        var page = paperMarkRepository.findByOwnerId(paper.getId(), pageable);
+        var page = paperMarkRepository.findByFilters(paper.getId(), null, null, pageable);
 
         assertThat(page.getTotalElements()).isEqualTo(1);
         assertThat(page.getContent().get(0).getPaper().getId()).isEqualTo(paper.getId());
@@ -171,8 +171,8 @@ class PaperMarkRepositoryTest {
     }
 
     @Test
-    @DisplayName("findByOwnerIdAndEnteredByInstructorId narrows to that instructor's own entries on the paper")
-    void findByOwnerIdAndEnteredByInstructorId_scopedToInstructor() {
+    @DisplayName("findByFilters narrows to that instructor's own entries on the paper")
+    void findByFilters_scopedToInstructor() {
         UUID instructorA = UUID.randomUUID();
         UUID instructorB = UUID.randomUUID();
 
@@ -187,15 +187,78 @@ class PaperMarkRepositoryTest {
         entityManager.clear();
 
         Pageable pageable = PageRequest.of(0, 10);
-        var page = paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(paper.getId(), instructorA, pageable);
+        var page = paperMarkRepository.findByFilters(paper.getId(), instructorA, null, pageable);
 
         assertThat(page.getTotalElements()).isEqualTo(1);
         assertThat(page.getContent().get(0).getEnteredByInstructorId()).isEqualTo(instructorA);
 
         // An instructor with no entries on this paper gets an empty page, not an error.
-        var emptyPage = paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(
-                paper.getId(), UUID.randomUUID(), pageable);
+        var emptyPage = paperMarkRepository.findByFilters(paper.getId(), UUID.randomUUID(), null, pageable);
         assertThat(emptyPage.getTotalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("findByFilters matches a student's whole code number, case-insensitively, and only that student")
+    void findByFilters_matchesWholeCodeNumber() {
+        PaperMark target = newMark(paper, studentId);
+        target.getStudentSnapshot().setCodeNumber("STU-042");
+        entityManager.persist(target);
+
+        PaperMark other = newMark(paper, UUID.randomUUID());
+        other.getStudentSnapshot().setCodeNumber("STU-043");
+        entityManager.persist(other);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        var exact = paperMarkRepository.findByFilters(paper.getId(), null, "STU-042", pageable);
+        assertThat(exact.getTotalElements()).isEqualTo(1);
+        assertThat(exact.getContent().get(0).getStudentSnapshot().getCodeNumber()).isEqualTo("STU-042");
+
+        // Case is not the instructor's problem
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), null, "stu-042", pageable).getTotalElements())
+                .isEqualTo(1);
+
+        // A partial code matches nothing — this is a whole-code lookup, not a substring search
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), null, "STU-04", pageable).getTotalElements())
+                .isZero();
+
+        // A code with no mark on this paper is an empty page, not an error
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), null, "STU-999", pageable).getTotalElements())
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("findByFilters combines the instructor and code-number filters")
+    void findByFilters_combinesInstructorAndCodeNumber() {
+        UUID instructorA = UUID.randomUUID();
+        UUID instructorB = UUID.randomUUID();
+
+        PaperMark byA = newMark(paper, studentId);
+        byA.getStudentSnapshot().setCodeNumber("STU-100");
+        byA.setEnteredByInstructorId(instructorA);
+        entityManager.persist(byA);
+
+        PaperMark byB = newMark(paper, UUID.randomUUID());
+        byB.getStudentSnapshot().setCodeNumber("STU-200");
+        byB.setEnteredByInstructorId(instructorB);
+        entityManager.persist(byB);
+        entityManager.flush();
+        entityManager.clear();
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        // A's own mark, found by its code
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), instructorA, "STU-100", pageable)
+                .getTotalElements()).isEqualTo(1);
+
+        // B's mark is excluded once the list is narrowed to A's own entries, though searching
+        // without that narrowing does find it — which is what lets an instructor look anyone up.
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), instructorA, "STU-200", pageable)
+                .getTotalElements()).isZero();
+        assertThat(paperMarkRepository.findByFilters(paper.getId(), null, "STU-200", pageable)
+                .getTotalElements()).isEqualTo(1);
     }
 
 }

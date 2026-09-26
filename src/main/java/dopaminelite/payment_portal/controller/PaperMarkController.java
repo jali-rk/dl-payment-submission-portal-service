@@ -38,6 +38,10 @@ public class PaperMarkController {
      * @param offset number of results to skip, defaults to 0
      * @param onlyMine when true, narrows the list to marks the caller themselves entered —
      *        backs the marks page's "You" / "All" toggle
+     * @param studentCodeNumber when given, narrows the list to that one student's mark. Matched in
+     *        full and case-insensitively, and trimmed before matching. Independent of
+     *        {@code onlyMine}: an instructor can look up any student's mark, whoever entered it —
+     *        what they may then change is enforced separately, on update and delete.
      * @param authorizationHeader the caller's bearer token, used to resolve their own ID when
      *        {@code onlyMine} is set
      * @return paginated list of marks
@@ -48,6 +52,7 @@ public class PaperMarkController {
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "false") boolean onlyMine,
+            @RequestParam(required = false) String studentCodeNumber,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
         if (limit < 1 || limit > 100) {
@@ -59,7 +64,7 @@ public class PaperMarkController {
                 : null;
 
         PaginatedResponse<PaperMarkResponse> response =
-                paperMarkService.listMarks(paperId, limit, offset, onlyMineInstructorId);
+                paperMarkService.listMarks(paperId, limit, offset, onlyMineInstructorId, studentCodeNumber);
         return ResponseEntity.ok(response);
     }
 

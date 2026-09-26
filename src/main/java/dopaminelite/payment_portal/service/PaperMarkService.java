@@ -67,16 +67,24 @@ public class PaperMarkService {
      * @param offset number of results to skip
      * @param onlyMineInstructorId when non-null, narrows the list to marks this instructor
      *        entered themselves — backs the marks page's "You" / "All" toggle
+     * @param studentCodeNumber when non-blank, narrows the list to that one student's mark so an
+     *        instructor can pull up a student directly instead of paging for them. Trimmed here
+     *        rather than trusted: a code copied from a message or typed on a phone keyboard often
+     *        carries a trailing space, which would otherwise match nothing at all.
      * @return paginated response containing the mark list and total count
      * @throws ResourceNotFoundException if no paper exists with the given ID
      */
-    public PaginatedResponse<PaperMarkResponse> listMarks(UUID paperId, int limit, int offset, UUID onlyMineInstructorId) {
+    public PaginatedResponse<PaperMarkResponse> listMarks(UUID paperId, int limit, int offset,
+                                                          UUID onlyMineInstructorId, String studentCodeNumber) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
+        String codeFilter = studentCodeNumber == null || studentCodeNumber.isBlank()
+                ? null
+                : studentCodeNumber.trim();
+
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<PaperMark> page = onlyMineInstructorId != null
-                ? paperMarkRepository.findByOwnerIdAndEnteredByInstructorId(owner.getId(), onlyMineInstructorId, pageable)
-                : paperMarkRepository.findByOwnerId(owner.getId(), pageable);
+        Page<PaperMark> page = paperMarkRepository.findByFilters(
+                owner.getId(), onlyMineInstructorId, codeFilter, pageable);
 
         List<PaperMarkResponse> items = page.getContent().stream()
                 .map(paperMarkMapper::toResponse)
