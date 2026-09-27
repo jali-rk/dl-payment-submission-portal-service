@@ -327,8 +327,8 @@ class PaperMarkControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /papers/{paperId}/marks/{markId} - An INSTRUCTOR cannot edit another instructor's mark")
-    void testUpdateMark_Forbidden_WhenEnteredByAnotherInstructor() throws Exception {
+    @DisplayName("GET /papers/{paperId}/marks/{markId} - Reports who entered a mark, which is what the BFF gates edits on")
+    void testGetMark_ReportsWhoEnteredIt() throws Exception {
         Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
 
         String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
@@ -339,51 +339,21 @@ class PaperMarkControllerTest {
                 .andReturn().getResponse().getContentAsString();
         UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
 
-        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
-        update.setTotalMarks(new BigDecimal("90.000"));
-
-        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
-                        .param("callerRole", "INSTRUCTOR")
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(update)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-
-        // The instructor who entered it can still edit it
-        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
-                        .param("callerRole", "INSTRUCTOR")
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(update)))
+        // Whether an instructor may change this mark is decided by the BFF, from this field. This
+        // service deliberately doesn't re-check it — it has no inbound authentication to check with.
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", paper.getId(), markId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalMarks").value(90.000));
-    }
+                .andExpect(jsonPath("$.id").value(markId.toString()))
+                .andExpect(jsonPath("$.enteredByInstructorId").value(INSTRUCTOR_A_ID.toString()))
+                .andExpect(jsonPath("$.student.codeNumber").value(KNOWN_CODE_NUMBER));
 
-    @Test
-    @DisplayName("DELETE /papers/{paperId}/marks/{markId} - An INSTRUCTOR cannot delete another instructor's mark")
-    void testDeleteMark_Forbidden_WhenEnteredByAnotherInstructor() throws Exception {
-        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+        // Scoped to the paper, so a mark id from elsewhere 404s rather than leaking
+        Paper otherPaper = createPaperWithScheme(new BigDecimal("40.000"), null, null);
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", otherPaper.getId(), markId))
+                .andExpect(status().isNotFound());
 
-        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(validRequest())))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
-
-        mockMvc.perform(delete("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
-                        .param("callerRole", "INSTRUCTOR")
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-
-        // A main admin isn't held to the same-instructor restriction
-        mockMvc.perform(delete("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
-                        .param("callerRole", "MAIN_ADMIN")
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
-                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", paper.getId(), UUID.randomUUID()))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -567,8 +537,8 @@ class PaperMarkControllerTest {
     }
 
     @Test
-    @DisplayName("Ownership and onlyMine both resolve through a correlation, not just a standalone paper")
-    void testOwnershipAndOnlyMine_WorkForCorrelationOwnedMarks() throws Exception {
+    @DisplayName("Reading a mark and the onlyMine filter both resolve through a correlation, not just a standalone paper")
+    void testReadAndOnlyMine_WorkForCorrelationOwnedMarks() throws Exception {
         PaperCorrelation correlation = new PaperCorrelation();
         correlation.setCode("COR-TEST");
         correlation.setDisplayName("Correlated Test Paper");
@@ -597,18 +567,18 @@ class PaperMarkControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(0));
 
+        // Reading the mark by id resolves through the correlation too — the BFF needs this to work
+        // for correlated papers, since that's what it gates the edit on.
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", sitting.getId(), markId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enteredByInstructorId").value(INSTRUCTOR_A_ID.toString()))
+                .andExpect(jsonPath("$.correlationId").value(correlation.getId().toString()))
+                .andExpect(jsonPath("$.paperId").value(org.hamcrest.Matchers.nullValue()));
+
         PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
         update.setTotalMarks(new BigDecimal("90.000"));
 
         mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", sitting.getId(), markId)
-                        .param("callerRole", "INSTRUCTOR")
-                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(update)))
-                .andExpect(status().isForbidden());
-
-        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", sitting.getId(), markId)
-                        .param("callerRole", "INSTRUCTOR")
                         .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(update)))

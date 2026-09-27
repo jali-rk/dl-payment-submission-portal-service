@@ -46,19 +46,6 @@ public class GlobalExceptionHandler {
     }
     
     /**
-     * Handles ForbiddenException when an authenticated caller isn't allowed to perform the
-     * action on a resource that does exist.
-     *
-     * @param ex the exception
-     * @return 403 FORBIDDEN response with error details
-     */
-    @ExceptionHandler(ForbiddenException.class)
-    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
-        ErrorResponse error = new ErrorResponse(HttpStatus.FORBIDDEN.value(), "FORBIDDEN", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
-    }
-
-    /**
      * Handles ValidationException for business rule violations.
      *
      * @param ex the exception

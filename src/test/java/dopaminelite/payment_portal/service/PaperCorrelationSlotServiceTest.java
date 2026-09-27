@@ -61,6 +61,9 @@ class PaperCorrelationSlotServiceTest {
     private PaperService paperService;
 
     @Autowired
+    private PaperCorrelationService correlationService;
+
+    @Autowired
     private PaperAuditLogRepository auditLogRepository;
 
     @Autowired
@@ -310,6 +313,65 @@ class PaperCorrelationSlotServiceTest {
         List<PaperSlot> slots = paperSlotRepository.findAll();
         assertThat(slots).hasSize(1);
         assertThat(effectiveEnd(slots.get(0))).isEqualTo(NEXT_FRIDAY);
+    }
+
+    @Test
+    @DisplayName("a mis-tagged paper-event can be ungrouped again while nothing has happened yet")
+    void ungrouping_allowedBeforeAnyConsequence() {
+        PaperCorrelation correlation = correlation("NOV-W1");
+        PaymentPortal november = portal("November");
+        Paper mistagged = paper("Tagged by mistake", NEXT_MONDAY, NEXT_WEDNESDAY, correlation, november);
+
+        var response = paperService.removeCorrelation(mistagged.getId(), ADMIN_ID);
+
+        assertThat(response.getCorrelation()).isNull();
+        assertThat(paperRepository.findById(mistagged.getId()).orElseThrow().getCorrelation()).isNull();
+        assertThat(auditLogRepository.findAll())
+                .anyMatch(entry -> entry.getAction() == PaperAuditAction.CORRELATION_DETACHED
+                        && entry.getActorId().equals(ADMIN_ID));
+
+        // And now the correlation itself can finally be deleted, which it couldn't while linked.
+        correlationService.deleteCorrelation(correlation.getId());
+        assertThat(correlationRepository.findById(correlation.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ungrouping is refused once QR codes have been issued under the correlation")
+    void ungrouping_refusedOnceSlotsExist() {
+        PaperCorrelation correlation = correlation("NOV-W1");
+        PaymentPortal november = portal("November");
+        Paper sitting = paper("Full week", NEXT_MONDAY, NEXT_FRIDAY, correlation, november);
+        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(november).getId());
+        assertThat(paperSlotRepository.findAll()).hasSize(1);
+
+        assertThatThrownBy(() -> paperService.removeCorrelation(sitting.getId(), ADMIN_ID))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("QR codes have already been issued");
+
+        assertThat(paperRepository.findById(sitting.getId()).orElseThrow().getCorrelation()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("ungrouping is refused once the paper-event has started")
+    void ungrouping_refusedOnceStarted() {
+        PaperCorrelation correlation = correlation("OCT-W1");
+        PaymentPortal october = portal("October");
+        Paper started = paper("Already running", MONDAY, FRIDAY, correlation, october);
+
+        assertThatThrownBy(() -> paperService.removeCorrelation(started.getId(), ADMIN_ID))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("already started");
+    }
+
+    @Test
+    @DisplayName("ungrouping an already-standalone paper-event is refused rather than silently doing nothing")
+    void ungrouping_refusedWhenNotGrouped() {
+        PaymentPortal november = portal("November");
+        Paper standalone = paper("Never grouped", NEXT_MONDAY, NEXT_FRIDAY, null, november);
+
+        assertThatThrownBy(() -> paperService.removeCorrelation(standalone.getId(), ADMIN_ID))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("not part of a correlation");
     }
 
     @Test

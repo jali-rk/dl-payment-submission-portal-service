@@ -150,6 +150,27 @@ public class PaperController {
     }
 
     /**
+     * Takes a paper-event out of its correlation, leaving it standalone.
+     *
+     * <p>A separate endpoint rather than a null {@code correlationId} on the update: in a partial
+     * update an absent field means "leave this alone", so there is no way to say "remove it" in the
+     * body without inventing a magic value.
+     *
+     * @param paperId the UUID of the paper-event
+     * @param authorizationHeader the caller's bearer token, used to attribute the change
+     * @return the paper-event, now without a correlation
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no paper exists with the given ID
+     * @throws dopaminelite.payment_portal.exception.ValidationException if it isn't in a correlation, has already started, or its correlation already has marks or issued QR codes
+     */
+    @DeleteMapping("/{paperId}/correlation")
+    public ResponseEntity<PaperResponse> removeCorrelation(
+            @PathVariable UUID paperId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        return ResponseEntity.ok(paperService.removeCorrelation(paperId, actorId(authorizationHeader)));
+    }
+
+    /**
      * Deletes a paper, provided nothing depends on it yet.
      *
      * @param paperId the UUID of the paper to delete

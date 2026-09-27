@@ -46,6 +46,16 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
     Optional<PaperSlot> findFirstByCorrelationIdAndStudentIdOrderByCreatedAtAsc(UUID correlationId, UUID studentId);
 
     /**
+     * Whether any QR code has been issued under a correlation — by any of its paper-events. Guards
+     * ungrouping: once codes exist they carry the correlation's stamp, and some student's window may
+     * have been widened because of it, so the grouping can no longer be unpicked cleanly.
+     *
+     * @param correlationId the correlation to check
+     * @return true if at least one slot names it
+     */
+    boolean existsByCorrelationId(UUID correlationId);
+
+    /**
      * Slots on this paper-event whose student <em>already</em> holds one in the target
      * correlation — the students who would end up with two slots for one paper if this
      * paper-event joined it.

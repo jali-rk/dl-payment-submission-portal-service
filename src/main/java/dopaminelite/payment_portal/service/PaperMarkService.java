@@ -14,7 +14,6 @@ import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.MarkStudentSnapshot;
 import dopaminelite.payment_portal.entity.PaperMark;
 import dopaminelite.payment_portal.exception.DuplicateResourceException;
-import dopaminelite.payment_portal.exception.ForbiddenException;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMarkMapper;
@@ -185,27 +184,28 @@ public class PaperMarkService {
      * Partially updates an existing mark's values. The student a mark belongs to is never
      * editable here — only non-null fields in the request are applied.
      *
+     * <p>Who is allowed to edit which mark is decided by the BFF, which owns authentication and
+     * authorization: it reads the mark first and refuses an instructor editing one they didn't
+     * enter. Deliberately not re-checked here — this service has no inbound authentication at all
+     * (it doesn't even verify the token's signature), so a second copy of the rule here would add
+     * no protection while giving two places for it to drift apart.
+     *
      * @param paperId the paper's ID
      * @param markId the mark's ID
      * @param request the fields to update
-     * @param instructorId the ID of the instructor making the edit
-     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only edit
-     *        marks they themselves entered; ADMIN/MAIN_ADMIN are exempt from that restriction
+     * @param instructorId the ID of the instructor making the edit, recorded as who last touched it
      * @return the updated mark
      * @throws ResourceNotFoundException if no mark exists with the given ID for that paper
-     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      * @throws ValidationException if an updated value is out-of-bounds or for a disabled section
      */
     @Transactional
     public PaperMarkResponse updateMark(UUID paperId, UUID markId, PaperMarkUpdateRequest request,
-                                         UUID instructorId, String callerRole) {
+                                         UUID instructorId) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
-
-        requireOwnMarkIfInstructor(mark, instructorId, callerRole);
 
         // Deliberately the resolved owner's scheme rather than mark.getPaper()'s: a
         // correlation-owned mark has no paper at all, and reading one off it would NPE.
@@ -235,45 +235,40 @@ public class PaperMarkService {
      * Deletes a mark. This is also the mechanism to bring a paper's mark count back to 0,
      * unlocking its mark scheme for editing again.
      *
+     * <p>As with {@link #updateMark}, whether this caller may delete this particular mark is the
+     * BFF's decision, made before the request reaches here.
+     *
      * @param paperId the paper's ID
      * @param markId the mark's ID
-     * @param instructorId the ID of the instructor making the request
-     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only delete
-     *        marks they themselves entered; ADMIN/MAIN_ADMIN are exempt from that restriction
      * @throws ResourceNotFoundException if no mark exists with the given ID for that paper
-     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      */
     @Transactional
-    public void deleteMark(UUID paperId, UUID markId, UUID instructorId, String callerRole) {
+    public void deleteMark(UUID paperId, UUID markId) {
         MarkOwner owner = markOwnerResolver.resolve(paperId);
 
         PaperMark mark = paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Paper mark not found with id: " + markId + " for paper: " + paperId));
 
-        requireOwnMarkIfInstructor(mark, instructorId, callerRole);
-
         paperMarkRepository.delete(mark);
     }
 
     /**
-     * Enforces that an INSTRUCTOR caller only edits/deletes marks they themselves entered.
-     * ADMIN and MAIN_ADMIN are exempt — they're already trusted with everything else about a
-     * paper (its mark scheme, its deletion), so restricting them here would only get in the way
-     * of fixing another instructor's mistake.
+     * A single mark, scoped to the paper it should belong to. Exists so the BFF can read who
+     * entered a mark before deciding whether the caller is allowed to change it.
      *
-     * @param mark the mark being edited or deleted
-     * @param callerId the caller's ID
-     * @param callerRole the caller's role, forwarded by the BFF
-     * @throws ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
+     * @param paperId the paper's ID
+     * @param markId the mark's ID
+     * @return the mark
+     * @throws ResourceNotFoundException if no mark exists with the given ID for that paper
      */
-    private void requireOwnMarkIfInstructor(PaperMark mark, UUID callerId, String callerRole) {
-        if (!"INSTRUCTOR".equalsIgnoreCase(callerRole)) {
-            return;
-        }
-        if (!mark.getEnteredByInstructorId().equals(callerId)) {
-            throw ForbiddenException.notYourMark(mark.getId());
-        }
+    public PaperMarkResponse getMark(UUID paperId, UUID markId) {
+        MarkOwner owner = markOwnerResolver.resolve(paperId);
+
+        return paperMarkRepository.findByIdAndOwnerId(markId, owner.getId())
+                .map(paperMarkMapper::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Paper mark not found with id: " + markId + " for paper: " + paperId));
     }
 
     /**

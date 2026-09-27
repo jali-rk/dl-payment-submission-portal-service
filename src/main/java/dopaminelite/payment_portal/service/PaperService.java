@@ -382,6 +382,60 @@ public class PaperService {
     }
 
     /**
+     * Takes a paper-event out of its correlation, leaving it standalone again.
+     *
+     * <p>Exists because staff make mistakes: a paper-event tagged into the wrong group, or tagged
+     * when it shouldn't have been, previously had no way back — and since a correlation can only be
+     * deleted once nothing is linked to it, that also left an unwanted correlation permanently
+     * undeletable. Grouping is freely reversible right up to the point where it has had real
+     * consequences, and frozen after.
+     *
+     * <p>Refused once any of those consequences exist, mirroring the rules on joining:
+     * <ul>
+     *   <li><b>The paper-event has started.</b> Students may be sitting it.</li>
+     *   <li><b>The correlation holds marks.</b> They belong to the paper as a whole, not to either
+     *       sitting, so there is no honest way to decide which ones would come back out.</li>
+     *   <li><b>Any QR code has been issued under the correlation.</b> Codes carry its stamp and a
+     *       student's window may have been widened because of it.</li>
+     * </ul>
+     *
+     * @param paperId the paper-event to remove from its correlation
+     * @param actorId the admin doing it, for the audit trail
+     * @return the paper-event, now without a correlation
+     * @throws ResourceNotFoundException if no paper exists with that ID
+     * @throws ValidationException if it isn't in a correlation, or any of the above applies
+     */
+    @Transactional
+    public PaperResponse removeCorrelation(UUID paperId, UUID actorId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        PaperCorrelation correlation = paper.getCorrelation();
+        if (correlation == null) {
+            throw new ValidationException("Paper " + paperId + " is not part of a correlation");
+        }
+        if (!paper.getStartDate().isAfter(LocalDate.now())) {
+            throw ValidationException.correlationChangeNotAllowed(paperId, "it has already started");
+        }
+        if (paperMarkRepository.countByOwnerId(correlation.getId()) > 0) {
+            throw ValidationException.correlationChangeNotAllowed(paperId,
+                    "its correlation '" + correlation.getCode() + "' already has marks recorded against it");
+        }
+        if (paperSlotRepository.existsByCorrelationId(correlation.getId())) {
+            throw ValidationException.correlationChangeNotAllowed(paperId,
+                    "QR codes have already been issued under its correlation '" + correlation.getCode() + "'");
+        }
+
+        paper.setCorrelation(null);
+        Paper saved = paperRepository.saveAndFlush(paper);
+
+        paperAuditService.record(paperId, correlation, PaperAuditAction.CORRELATION_DETACHED,
+                String.format("%s -> none", correlation.getCode()), actorId);
+
+        return paperMapper.toResponse(saved);
+    }
+
+    /**
      * Refuses the move when a student would end up holding two slots for one paper.
      *
      * <p>Only possible where they already do: they paid both months and the other sitting was

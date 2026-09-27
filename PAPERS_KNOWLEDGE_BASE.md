@@ -175,7 +175,8 @@ the mark scheme and the correlation, the two things that have to match.
 
 | Rule | Why it exists |
 |---|---|
-| A paper-event can only join or move correlation **before it starts** | The grouping decides who gets a code for what; changing it mid-sitting changes that under students' feet. (Leaving a correlation outright isn't supported at all — see §10.) |
+| A paper-event can only join, move or leave a correlation **before it starts** | The grouping decides who gets a code for what; changing it mid-sitting changes that under students' feet. |
+| …and only while the correlation has **no marks and no QR codes issued** | Marks belong to the paper as a whole, so there's no honest way to decide which would come back out; and issued codes carry the grouping's stamp, with windows possibly already widened by it. |
 | …and only while it has **no marks of its own** | Marks would be stranded, since grading moves to the correlation. |
 | Joining is **refused** if a student already holds a code in that correlation | They'd end up with two for one paper. The error names those students so you can cancel the surplus — nothing is deleted automatically, since a student may already be carrying that code. |
 | The **mark scheme locks** once any mark exists | Changing what a paper is marked out of after marking has begun invalidates the marks already entered. |
@@ -236,11 +237,19 @@ Accurate as of this document:
 - The **student leaderboard list** isn't collapsed per correlation yet. A student in a correlated
   paper sees the correlation's display name on each entry, but a pair still shows as two rows there.
 - The **audit trail** is written but has no screen — read `paper_audit_log` with SQL for now.
-- **Untagging** a paper-event — removing it from a correlation without putting it in another one —
-  isn't possible at all, by any route but SQL. A paper-event can be **moved** to a different
-  correlation, but sending no correlation reads as "leave this field alone" rather than "remove it",
-  so there is nothing to untag with. Worth knowing before you tag: a mistake is corrected by
-  re-tagging, not by undoing.
+
+---
+
+## 11. Correcting a mistake
+
+Grouping is reversible right up to the point where it has had real consequences, and frozen after.
+
+Set the correlation back to **None** on the paper-event and save. That works while the paper-event
+hasn't started, the correlation holds no marks, and no QR codes have been issued under it. Past any
+of those, it's refused with a message saying which one — the grouping decided who got which code,
+and unpicking it then would change what students already hold.
+
+Once the last paper-event has left a correlation, the correlation itself can be deleted.
 
 ---
 

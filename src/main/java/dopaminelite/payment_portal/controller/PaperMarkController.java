@@ -116,11 +116,8 @@ public class PaperMarkController {
      * @param markId the UUID of the mark to update
      * @param request the fields to update
      * @param authorizationHeader the caller's bearer token, used to attribute the editing instructor
-     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only edit
-     *        marks they themselves entered
      * @return the updated mark
      * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no mark exists with the given ID for that paper
-     * @throws dopaminelite.payment_portal.exception.ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      * @throws dopaminelite.payment_portal.exception.ValidationException if an updated value is out-of-bounds or for a disabled section
      */
     @PatchMapping("/{markId}")
@@ -128,12 +125,25 @@ public class PaperMarkController {
             @PathVariable UUID paperId,
             @PathVariable UUID markId,
             @RequestBody PaperMarkUpdateRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            @RequestParam(required = false) String callerRole
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
         UUID instructorId = jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(UNKNOWN_INSTRUCTOR_ID);
-        PaperMarkResponse response = paperMarkService.updateMark(paperId, markId, request, instructorId, callerRole);
+        PaperMarkResponse response = paperMarkService.updateMark(paperId, markId, request, instructorId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retrieves a single mark. Exists for the BFF, which reads who entered a mark before deciding
+     * whether the caller is allowed to edit or delete it.
+     *
+     * @param paperId the UUID of the paper
+     * @param markId the UUID of the mark
+     * @return the mark
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no mark exists with the given ID for that paper
+     */
+    @GetMapping("/{markId}")
+    public ResponseEntity<PaperMarkResponse> getMark(@PathVariable UUID paperId, @PathVariable UUID markId) {
+        return ResponseEntity.ok(paperMarkService.getMark(paperId, markId));
     }
 
     /**
@@ -142,21 +152,11 @@ public class PaperMarkController {
      *
      * @param paperId the UUID of the paper
      * @param markId the UUID of the mark to delete
-     * @param authorizationHeader the caller's bearer token, used to identify the caller
-     * @param callerRole the caller's role, forwarded by the BFF — an INSTRUCTOR may only delete
-     *        marks they themselves entered
      * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no mark exists with the given ID for that paper
-     * @throws dopaminelite.payment_portal.exception.ForbiddenException if the caller is an INSTRUCTOR who didn't enter this mark
      */
     @DeleteMapping("/{markId}")
-    public ResponseEntity<Void> deleteMark(
-            @PathVariable UUID paperId,
-            @PathVariable UUID markId,
-            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            @RequestParam(required = false) String callerRole
-    ) {
-        UUID instructorId = jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(UNKNOWN_INSTRUCTOR_ID);
-        paperMarkService.deleteMark(paperId, markId, instructorId, callerRole);
+    public ResponseEntity<Void> deleteMark(@PathVariable UUID paperId, @PathVariable UUID markId) {
+        paperMarkService.deleteMark(paperId, markId);
         return ResponseEntity.noContent().build();
     }
 
