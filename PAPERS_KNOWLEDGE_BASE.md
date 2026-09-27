@@ -175,7 +175,7 @@ the mark scheme and the correlation, the two things that have to match.
 
 | Rule | Why it exists |
 |---|---|
-| A paper-event can only join or leave a correlation **before it starts** | The grouping decides who gets a code for what; changing it mid-sitting changes that under students' feet. |
+| A paper-event can only join or move correlation **before it starts** | The grouping decides who gets a code for what; changing it mid-sitting changes that under students' feet. (Leaving a correlation outright isn't supported at all — see §10.) |
 | …and only while it has **no marks of its own** | Marks would be stranded, since grading moves to the correlation. |
 | Joining is **refused** if a student already holds a code in that correlation | They'd end up with two for one paper. The error names those students so you can cancel the surplus — nothing is deleted automatically, since a student may already be carrying that code. |
 | The **mark scheme locks** once any mark exists | Changing what a paper is marked out of after marking has begun invalidates the marks already entered. |
@@ -236,7 +236,11 @@ Accurate as of this document:
 - The **student leaderboard list** isn't collapsed per correlation yet. A student in a correlated
   paper sees the correlation's display name on each entry, but a pair still shows as two rows there.
 - The **audit trail** is written but has no screen — read `paper_audit_log` with SQL for now.
-- **Detaching** a paper-event from a correlation is possible through the API but has no button.
+- **Untagging** a paper-event — removing it from a correlation without putting it in another one —
+  isn't possible at all, by any route but SQL. A paper-event can be **moved** to a different
+  correlation, but sending no correlation reads as "leave this field alone" rather than "remove it",
+  so there is nothing to untag with. Worth knowing before you tag: a mistake is corrected by
+  re-tagging, not by undoing.
 
 ---
 

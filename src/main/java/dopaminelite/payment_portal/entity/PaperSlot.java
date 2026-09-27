@@ -97,6 +97,11 @@ public class PaperSlot extends BaseEntity {
      * The last day this slot can be scanned: its own {@link #validUntil} when one has been set by
      * an extension, otherwise the paper-event's end date. Use this rather than reading either
      * field directly, so the two never disagree.
+     *
+     * <p>Beware that the fallback reads {@link #paper}, which is lazy: on a detached slot whose
+     * {@code validUntil} is null this throws {@code LazyInitializationException}. Call it while the
+     * slot's session is still open, or read it once inside that session first — which is what
+     * {@code PaperSlotWriter.extendCorrelatedSiblingIfAny} relies on.
      */
     public LocalDate effectiveEndDate() {
         return validUntil != null ? validUntil : paper.getEndDate();

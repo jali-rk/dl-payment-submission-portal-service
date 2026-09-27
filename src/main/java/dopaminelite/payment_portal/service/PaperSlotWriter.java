@@ -112,6 +112,11 @@ public class PaperSlotWriter {
             return null;
         }
 
+        // Reading effectiveEndDate() here, inside this transaction, also initialises the sibling's
+        // lazy paper association — which the caller depends on: it reads effectiveEndDate() again
+        // once this transaction has closed, and on a slot that needed no extension (so validUntil
+        // is still null) that would otherwise hit a detached lazy proxy. Keep this call before the
+        // return, even if the comparison itself is ever restructured.
         if (paper.getEndDate().isAfter(sibling.effectiveEndDate())) {
             // Managed entity in this transaction; flushed on commit.
             sibling.setValidUntil(paper.getEndDate());

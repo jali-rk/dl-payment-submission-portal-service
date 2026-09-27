@@ -4,10 +4,12 @@ import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaperSlot;
+import dopaminelite.payment_portal.entity.PaperSlotCreationResult;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.StudentSnapshot;
 import dopaminelite.payment_portal.entity.enums.PaperAuditAction;
+import dopaminelite.payment_portal.entity.enums.PaperSlotCreationOutcome;
 import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.exception.ValidationException;
@@ -144,11 +146,25 @@ class PaperCorrelationSlotServiceTest {
         paper("Full week", MONDAY, FRIDAY, correlation, october);
 
         paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(october).getId());
-        paperSlotService.createSlotsForApprovedSubmission(approvedSubmission(september).getId());
+        UUID septemberSubmissionId = approvedSubmission(september).getId();
+        paperSlotService.createSlotsForApprovedSubmission(septemberSubmissionId);
 
         List<PaperSlot> slots = paperSlotRepository.findAll();
         assertThat(slots).hasSize(1);
         assertThat(effectiveEnd(slots.get(0))).isEqualTo(FRIDAY);
+
+        // Also assert what the admin is told, not just what the table holds. This is the one
+        // ordering where the second approval extends nothing (the window it would set is earlier),
+        // so the slot keeps a null validUntil — and reporting on it reads the lazy paper association
+        // after the writer's transaction closed. If that ever regresses the outcome silently
+        // becomes FAILED, telling the admin to retry a slot that was in fact perfectly fine.
+        List<PaperSlotCreationResult> results = resultRepository.findAll().stream()
+                .filter(r -> r.getPaymentSubmission().getId().equals(septemberSubmissionId))
+                .toList();
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getOutcome())
+                .as("outcome for the September approval (message: %s)", results.get(0).getMessage())
+                .isEqualTo(PaperSlotCreationOutcome.ALREADY_EXISTS);
     }
 
     @Test

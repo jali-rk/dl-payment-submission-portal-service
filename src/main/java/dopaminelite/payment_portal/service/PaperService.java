@@ -344,7 +344,13 @@ public class PaperService {
      *       decides who gets a QR code for what.</li>
      *   <li><b>It has marks of its own.</b> Those belong to this paper-event; joining a
      *       correlation moves grading to the correlation and would strand them, invisible.</li>
+     *   <li><b>A student would end up holding two slots for one paper.</b> See
+     *       {@link #requireNoSlotCollision} — the admin is told who, and cancels one.</li>
      * </ul>
+     *
+     * <p>Note this only ever moves a paper-event <em>into</em> a correlation. Removing it from one
+     * without naming another isn't reachable from here: {@code updatePaper} calls this only when a
+     * correlation id was given, since an absent id means "leave this alone" rather than "remove it".
      *
      * <p>Existing slots are no obstacle — they are brought along. A slot records its correlation
      * when it is created, and that stamp is what the duplicate-QR check searches on, so slots
