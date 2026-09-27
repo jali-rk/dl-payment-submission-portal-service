@@ -28,6 +28,13 @@ public class PaperUpdateRequest {
 
     private LocalDate endDate;
 
+    /**
+     * The correlation this paper-event belongs to, or null if it stands alone. When set, the
+     * mark scheme, marks and leaderboard belong to the correlation and are shared with its other
+     * sitting(s) of the same real paper.
+     */
+    private UUID correlationId;
+
     private List<UUID> linkedPortalIds;
 
 }

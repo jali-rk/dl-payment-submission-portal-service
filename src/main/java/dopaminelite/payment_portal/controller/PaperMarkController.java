@@ -36,19 +36,35 @@ public class PaperMarkController {
      * @param paperId the UUID of the paper
      * @param limit maximum number of results per page, defaults to 20
      * @param offset number of results to skip, defaults to 0
+     * @param onlyMine when true, narrows the list to marks the caller themselves entered —
+     *        backs the marks page's "You" / "All" toggle
+     * @param studentCodeNumber when given, narrows the list to that one student's mark. Matched in
+     *        full and case-insensitively, and trimmed before matching. Independent of
+     *        {@code onlyMine}: an instructor can look up any student's mark, whoever entered it —
+     *        what they may then change is enforced separately, on update and delete.
+     * @param authorizationHeader the caller's bearer token, used to resolve their own ID when
+     *        {@code onlyMine} is set
      * @return paginated list of marks
      */
     @GetMapping
     public ResponseEntity<PaginatedResponse<PaperMarkResponse>> listMarks(
             @PathVariable UUID paperId,
             @RequestParam(defaultValue = "20") int limit,
-            @RequestParam(defaultValue = "0") int offset
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "false") boolean onlyMine,
+            @RequestParam(required = false) String studentCodeNumber,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
         if (limit < 1 || limit > 100) {
             limit = 20;
         }
 
-        PaginatedResponse<PaperMarkResponse> response = paperMarkService.listMarks(paperId, limit, offset);
+        UUID onlyMineInstructorId = onlyMine
+                ? jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(UNKNOWN_INSTRUCTOR_ID)
+                : null;
+
+        PaginatedResponse<PaperMarkResponse> response =
+                paperMarkService.listMarks(paperId, limit, offset, onlyMineInstructorId, studentCodeNumber);
         return ResponseEntity.ok(response);
     }
 
@@ -114,6 +130,20 @@ public class PaperMarkController {
         UUID instructorId = jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(UNKNOWN_INSTRUCTOR_ID);
         PaperMarkResponse response = paperMarkService.updateMark(paperId, markId, request, instructorId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retrieves a single mark. Exists for the BFF, which reads who entered a mark before deciding
+     * whether the caller is allowed to edit or delete it.
+     *
+     * @param paperId the UUID of the paper
+     * @param markId the UUID of the mark
+     * @return the mark
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no mark exists with the given ID for that paper
+     */
+    @GetMapping("/{markId}")
+    public ResponseEntity<PaperMarkResponse> getMark(@PathVariable UUID paperId, @PathVariable UUID markId) {
+        return ResponseEntity.ok(paperMarkService.getMark(paperId, markId));
     }
 
     /**

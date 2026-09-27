@@ -8,7 +8,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -38,6 +40,22 @@ public class PaperSlotResponse {
      * instructor's scan screen can show it explicitly rather than the instructor having to
      * take that on faith.
      */
+    /**
+     * The last day this slot can be scanned. Usually the paper-event's end date, but later when
+     * a subsequent payment extended the window for the same paper rather than issuing a second
+     * QR code — so this, not the paper's own end date, is what the holder can rely on.
+     */
+    private LocalDate validUntil;
+
+    /**
+     * Every payment this one QR code covers, which is usually just {@link #submissionId} but is
+     * two when a later payment extended this slot rather than issuing a second code. The student's
+     * payments page lists each QR under the payment it belongs to, so it needs to show this one
+     * under both - otherwise the second month's card looks as though it produced nothing.
+     */
+    private List<UUID> coveredSubmissionIds;
+
+
     private SubmissionStatus paymentStatus;
 
     private UUID studentId;

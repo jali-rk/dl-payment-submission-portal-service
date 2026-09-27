@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.repository;
 
+import dopaminelite.payment_portal.entity.PaperCorrelation;
 import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.enums.PaperWritingMode;
 import org.springframework.data.domain.Page;
@@ -31,6 +32,68 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
     Optional<PaperSlot> findByPaperIdAndPaymentSubmissionId(UUID paperId, UUID paymentSubmissionId);
 
     /**
+     * The slot this student already holds for a correlation, if any — the check that stops a
+     * second QR code being issued for a paper they can already sit.
+     *
+     * <p>There can only ever be one, enforced by a unique constraint over the same pair (slots
+     * with no correlation don't collide, since both databases treat NULLs as distinct there);
+     * ordering by creation date just makes the outcome deterministic if that were ever bypassed.
+     *
+     * @param correlationId the correlation to look within
+     * @param studentId the student
+     * @return their existing slot for that paper, if they have one
+     */
+    Optional<PaperSlot> findFirstByCorrelationIdAndStudentIdOrderByCreatedAtAsc(UUID correlationId, UUID studentId);
+
+    /**
+     * Whether any QR code has been issued under a correlation — by any of its paper-events. Guards
+     * ungrouping: once codes exist they carry the correlation's stamp, and some student's window may
+     * have been widened because of it, so the grouping can no longer be unpicked cleanly.
+     *
+     * @param correlationId the correlation to check
+     * @return true if at least one slot names it
+     */
+    boolean existsByCorrelationId(UUID correlationId);
+
+    /**
+     * Slots on this paper-event whose student <em>already</em> holds one in the target
+     * correlation — the students who would end up with two slots for one paper if this
+     * paper-event joined it.
+     *
+     * <p>They already hold two QR codes today, which is the bug this grouping exists to stop; the
+     * grouping just can't be applied over the top of it. Surfaced so the admin can be told exactly
+     * who to sort out rather than being given a bare refusal.
+     *
+     * @param paperId the paper-event about to join
+     * @param correlationId the correlation it would join
+     * @return the colliding slots, submission eagerly fetched for the student's name and code
+     */
+    @Query("SELECT ps FROM PaperSlot ps JOIN FETCH ps.paymentSubmission sub "
+            + "WHERE ps.paper.id = :paperId AND ps.studentId IN "
+            + "(SELECT other.studentId FROM PaperSlot other WHERE other.correlation.id = :correlationId)")
+    List<PaperSlot> findSlotsCollidingWithCorrelation(
+            @Param("paperId") UUID paperId,
+            @Param("correlationId") UUID correlationId);
+
+    /**
+     * Stamps (or clears) the correlation on every slot of a paper-event.
+     *
+     * <p>A slot records its correlation when it is created, and that stamp is what the
+     * duplicate-QR check searches on. So a paper-event that joins a correlation after some of its
+     * slots already exist needs those slots brought along — otherwise they stay invisible to the
+     * check and the student is issued a second code anyway.
+     *
+     * @param paperId the paper-event whose slots to restamp
+     * @param correlation the correlation to stamp, or null when the paper-event is leaving one
+     * @return how many slots were updated
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE PaperSlot ps SET ps.correlation = :correlation WHERE ps.paper.id = :paperId")
+    int stampCorrelationOnSlots(
+            @Param("paperId") UUID paperId,
+            @Param("correlation") PaperCorrelation correlation);
+
+    /**
      * Atomically marks a slot as consumed, but only if it is currently unconsumed AND the
      * owning paper's validity window currently includes {@code today}. This is a single
      * conditional UPDATE (not read-then-write) so concurrent double-scans of the same slot
@@ -46,7 +109,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
             WHERE paper_slots.id = :id
               AND paper_slots.paper_id = papers.id
               AND paper_slots.consumed_at IS NULL
-              AND :today BETWEEN papers.start_date AND papers.end_date
+              AND :today BETWEEN papers.start_date
+                             AND COALESCE(paper_slots.valid_until, papers.end_date)
             """, nativeQuery = true)
     int consumeIfAvailable(
             @Param("id") UUID id,
@@ -57,8 +121,10 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
 
     /**
      * Finds slots matching optional filters, with the computed status filter expressed
-     * directly in JPQL (against the joined paper's date window and consumedAt) so pagination
-     * stays correct.
+     * directly in JPQL (against the slot's effective date window and consumedAt) so pagination
+     * stays correct. The window ends at the slot's own {@code validUntil} when an extension has
+     * set one, otherwise at the paper's end date — the same rule {@code PaperSlot.effectiveEndDate}
+     * applies in Java.
      *
      * @param paperId filter by paper, null for no filtering
      * @param studentId filter by the submitting student's ID, null for no filtering
@@ -79,8 +145,8 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "  (CAST(:statusFilter AS string) = 'CONSUMED' AND ps.consumedAt IS NOT NULL) OR " +
            "  (CAST(:statusFilter AS string) != 'CONSUMED' AND ps.consumedAt IS NULL AND " +
            "    ((CAST(:statusFilter AS string) = 'SCHEDULED' AND :today < p.startDate) OR " +
-           "     (CAST(:statusFilter AS string) = 'AVAILABLE' AND :today BETWEEN p.startDate AND p.endDate) OR " +
-           "     (CAST(:statusFilter AS string) = 'EXPIRED' AND :today > p.endDate)))) " +
+           "     (CAST(:statusFilter AS string) = 'AVAILABLE' AND :today BETWEEN p.startDate AND COALESCE(ps.validUntil, p.endDate)) OR " +
+           "     (CAST(:statusFilter AS string) = 'EXPIRED' AND :today > COALESCE(ps.validUntil, p.endDate))))) " +
            "ORDER BY ps.createdAt DESC")
     Page<PaperSlot> findByFilters(
             @Param("paperId") UUID paperId,
@@ -100,7 +166,9 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * resolving it to a display name — and handling the known legacy bug where some rows hold a
      * center *name* in that column instead of a UUID — is the caller's responsibility.
      *
-     * @param paperId the paper to aggregate attendance for
+     * @param paperIds the paper-events to aggregate across - one id normally, or every
+     *        sitting of the paper when it is part of a correlation, since a student's single
+     *        slot sits on whichever sitting created it
      * @param paperWritingMode always {@link PaperWritingMode#PHYSICAL}, passed as a parameter
      *        rather than hardcoded in JPQL so the enum comparison is type-checked
      * @return one row per distinct center key found among this paper's slots
@@ -109,11 +177,11 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "COUNT(ps) AS opened, " +
            "SUM(CASE WHEN ps.consumedAt IS NOT NULL THEN 1 ELSE 0 END) AS attended " +
            "FROM PaperSlot ps " +
-           "WHERE ps.paper.id = :paperId " +
+           "WHERE ps.paper.id IN :paperIds " +
            "AND ps.paymentSubmission.studentSnapshot.paperWritingMode = :paperWritingMode " +
            "GROUP BY ps.paymentSubmission.studentSnapshot.paperCenterId")
     List<CenterAttendanceAggregate> aggregateAttendanceByCenter(
-            @Param("paperId") UUID paperId,
+            @Param("paperIds") List<UUID> paperIds,
             @Param("paperWritingMode") PaperWritingMode paperWritingMode
     );
 
@@ -137,7 +205,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      * filtering by a center's id would silently miss every student whose row happens to hold that
      * center's name instead.
      *
-     * @param paperId the paper to list attendance for
+     * @param paperIds the paper-events to list across (see {@link #aggregateAttendanceByCenter})
      * @param centerId null for no center filter, {@code "UNASSIGNED"} for no-center students, else an exact raw center key
      * @param centerIdAlternate an additional raw value that also counts as a match (typically the
      *        resolved center's name), or null if there's none to also check
@@ -147,7 +215,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
      */
     @Query("SELECT ps FROM PaperSlot ps " +
            "JOIN FETCH ps.paymentSubmission sub " +
-           "WHERE ps.paper.id = :paperId AND " +
+           "WHERE ps.paper.id IN :paperIds AND " +
            "sub.studentSnapshot.paperWritingMode = dopaminelite.payment_portal.entity.enums.PaperWritingMode.PHYSICAL AND " +
            "(:centerId IS NULL OR " +
            "  (:centerId = 'UNASSIGNED' AND sub.studentSnapshot.paperCenterId IS NULL) OR " +
@@ -158,7 +226,7 @@ public interface PaperSlotRepository extends JpaRepository<PaperSlot, UUID> {
            "  (:attended = FALSE AND ps.consumedAt IS NULL)) " +
            "ORDER BY sub.studentSnapshot.fullName ASC")
     Page<PaperSlot> findAttendanceStudents(
-            @Param("paperId") UUID paperId,
+            @Param("paperIds") List<UUID> paperIds,
             @Param("centerId") String centerId,
             @Param("centerIdAlternate") String centerIdAlternate,
             @Param("attended") Boolean attended,

@@ -29,3 +29,8 @@ spring:
       enabled: false
     livereload:
       enabled: false
+
+# BFF Integration Configuration (needed for any @SpringBootTest to boot — PaperCenterService/
+# StudentLookupService require this placeholder to resolve even when a test never calls out)
+bff:
+  base-url: http://localhost:3000

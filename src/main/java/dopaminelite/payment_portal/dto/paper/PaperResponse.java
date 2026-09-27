@@ -34,6 +34,13 @@ public class PaperResponse {
      * The paper's mark scheme. Always present; individual fields are null when that section
      * isn't enabled, and all three are null when no scheme has been configured yet.
      */
+    /**
+     * The correlation this paper-event belongs to, or null if it stands alone. When set, the
+     * mark scheme and leaderboard fields above are the correlation's, shared with its other
+     * sitting(s), and instructors and students see its display name in place of {@link #title}.
+     */
+    private CorrelationRefDto correlation;
+
     private MarkSchemeDto markScheme;
 
     /**

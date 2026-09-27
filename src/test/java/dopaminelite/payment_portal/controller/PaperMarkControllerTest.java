@@ -6,6 +6,8 @@ import dopaminelite.payment_portal.dto.paper.MarkSchemeDto;
 import dopaminelite.payment_portal.dto.paper.PaperMarkCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperMarkUpdateRequest;
 import dopaminelite.payment_portal.entity.Paper;
+import dopaminelite.payment_portal.entity.PaperCorrelation;
+import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperMarkRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.service.StudentLookupService;
@@ -22,7 +24,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,23 +60,44 @@ class PaperMarkControllerTest {
     @Autowired
     private PaperMarkRepository paperMarkRepository;
 
+    @Autowired
+    private PaperCorrelationRepository paperCorrelationRepository;
+
     @MockitoBean
     private StudentLookupService studentLookupService;
 
     private static final UUID KNOWN_STUDENT_ID = UUID.randomUUID();
     private static final String KNOWN_CODE_NUMBER = "STU-001";
+    private static final UUID OTHER_STUDENT_ID = UUID.randomUUID();
+    private static final String OTHER_CODE_NUMBER = "STU-002";
+    private static final UUID INSTRUCTOR_A_ID = UUID.randomUUID();
+    private static final UUID INSTRUCTOR_B_ID = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
         paperMarkRepository.deleteAll();
         paperRepository.deleteAll();
+        paperCorrelationRepository.deleteAll();
 
         StudentLookupDto knownStudent = new StudentLookupDto(
                 KNOWN_STUDENT_ID, "Test Student", "student@example.com", "0770000000", KNOWN_CODE_NUMBER);
         org.mockito.Mockito.when(studentLookupService.findByCodeNumber(KNOWN_CODE_NUMBER))
                 .thenReturn(Optional.of(knownStudent));
+        StudentLookupDto otherStudent = new StudentLookupDto(
+                OTHER_STUDENT_ID, "Other Student", "other@example.com", "0770000001", OTHER_CODE_NUMBER);
+        org.mockito.Mockito.when(studentLookupService.findByCodeNumber(OTHER_CODE_NUMBER))
+                .thenReturn(Optional.of(otherStudent));
         org.mockito.Mockito.when(studentLookupService.findByCodeNumber("NO-SUCH-STUDENT"))
                 .thenReturn(Optional.empty());
+    }
+
+    /** Builds an unsigned test JWT carrying only the {@code id} claim {@link dopaminelite.payment_portal.util.JwtUserIdExtractor} reads. */
+    private String bearerTokenFor(UUID userId) {
+        String header = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(("{\"id\":\"" + userId + "\"}").getBytes(StandardCharsets.UTF_8));
+        return "Bearer " + header + "." + payload + ".";
     }
 
     private Paper createPaperWithScheme(BigDecimal mcqMax, BigDecimal structuredMax, BigDecimal essayMax) {
@@ -261,6 +286,305 @@ class PaperMarkControllerTest {
                         .content(objectMapper.writeValueAsString(newScheme)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.markScheme.mcqMaxMarks").value(30.000));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks?onlyMine=true - Narrows the list to the caller's own entries")
+    void testListMarks_OnlyMine_FiltersToCallerInstructor() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2));
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].studentId").value(KNOWN_STUDENT_ID.toString()));
+
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].studentId").value(OTHER_STUDENT_ID.toString()));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks/{markId} - Reports who entered a mark, which is what the BFF gates edits on")
+    void testGetMark_ReportsWhoEnteredIt() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        // Whether an instructor may change this mark is decided by the BFF, from this field. This
+        // service deliberately doesn't re-check it — it has no inbound authentication to check with.
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", paper.getId(), markId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(markId.toString()))
+                .andExpect(jsonPath("$.enteredByInstructorId").value(INSTRUCTOR_A_ID.toString()))
+                .andExpect(jsonPath("$.student.codeNumber").value(KNOWN_CODE_NUMBER));
+
+        // Scoped to the paper, so a mark id from elsewhere 404s rather than leaking
+        Paper otherPaper = createPaperWithScheme(new BigDecimal("40.000"), null, null);
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", otherPaper.getId(), markId))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", paper.getId(), UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks?studentCodeNumber= - Finds one student's mark, whoever entered it")
+    void testListMarks_SearchByStudentCodeNumber() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        // Entered by A
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        // Entered by B, for a different student
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        // A searching for the student whose mark B entered still finds it — looking up any
+        // student is allowed; only changing someone else's mark is not.
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].student.codeNumber").value(OTHER_CODE_NUMBER))
+                .andExpect(jsonPath("$.items[0].enteredByInstructorId").value(INSTRUCTOR_B_ID.toString()));
+
+        // A code with no mark on this paper is an empty list, not a 404
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", "NO-SUCH-CODE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks?studentCodeNumber= - Trims surrounding whitespace and ignores case")
+    void testListMarks_SearchTrimsAndIgnoresCase() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        // A code pasted from a message or typed on a phone keyboard often carries a stray space
+        for (String typed : new String[]{" " + KNOWN_CODE_NUMBER, KNOWN_CODE_NUMBER + " ",
+                "  " + KNOWN_CODE_NUMBER + "  ", KNOWN_CODE_NUMBER.toLowerCase()}) {
+            mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                            .param("studentCodeNumber", typed))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.total").value(1));
+        }
+
+        // A blank search is no search at all, rather than a search for nothing
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("studentCodeNumber", "   "))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    @Test
+    @DisplayName("GET /papers/{paperId}/marks - Search narrows within the onlyMine filter when both are set")
+    void testListMarks_SearchCombinesWithOnlyMine() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        PaperMarkCreateRequest otherRequest = validRequest();
+        otherRequest.setStudentCodeNumber(OTHER_CODE_NUMBER);
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(otherRequest)))
+                .andExpect(status().isCreated());
+
+        // Narrowed to A's own entries, B's mark is out of scope even when searched for by code
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+
+        // ...and B finds their own
+        mockMvc.perform(get("/papers/{paperId}/marks", paper.getId())
+                        .param("onlyMine", "true")
+                        .param("studentCodeNumber", OTHER_CODE_NUMBER)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+    }
+
+    @Test
+    @DisplayName("PATCH /papers/{paperId}/marks/{markId} - Should reject an updated section mark above its configured max")
+    void testUpdateMark_ExceedsSectionMax() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
+        update.setMcqMarks(new BigDecimal("50.000")); // exceeds the 40 max
+
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    @DisplayName("PATCH /papers/{paperId}/marks/{markId} - Should reject an update for a disabled section")
+    void testUpdateMark_DisabledSection() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
+        update.setEssayMarks(new BigDecimal("10.000")); // essay isn't enabled on this paper
+
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), markId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value(containsString("Essay")));
+    }
+
+    @Test
+    @DisplayName("PATCH /papers/{paperId}/marks/{markId} - 404s for a mark that doesn't exist on this paper")
+    void testUpdateMark_NotFound() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
+        update.setTotalMarks(new BigDecimal("90.000"));
+
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", paper.getId(), UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("DELETE /papers/{paperId}/marks/{markId} - 404s for a mark that doesn't exist on this paper")
+    void testDeleteMark_NotFound() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        mockMvc.perform(delete("/papers/{paperId}/marks/{markId}", paper.getId(), UUID.randomUUID()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("POST /papers/{paperId}/marks - Should reject total marks outside 0-100")
+    void testCreateMark_TotalMarksOutOfBounds() throws Exception {
+        Paper paper = createPaperWithScheme(new BigDecimal("40.000"), new BigDecimal("60.000"), null);
+
+        PaperMarkCreateRequest request = validRequest();
+        request.setTotalMarks(new BigDecimal("150.000"));
+
+        mockMvc.perform(post("/papers/{paperId}/marks", paper.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details.totalMarks").exists());
+    }
+
+    @Test
+    @DisplayName("Reading a mark and the onlyMine filter both resolve through a correlation, not just a standalone paper")
+    void testReadAndOnlyMine_WorkForCorrelationOwnedMarks() throws Exception {
+        PaperCorrelation correlation = new PaperCorrelation();
+        correlation.setCode("COR-TEST");
+        correlation.setDisplayName("Correlated Test Paper");
+        correlation.setMcqMaxMarks(new BigDecimal("40.000"));
+        correlation.setStructuredMaxMarks(new BigDecimal("60.000"));
+        correlation = paperCorrelationRepository.save(correlation);
+
+        Paper sitting = new Paper();
+        sitting.setTitle("Sitting A");
+        sitting.setStartDate(LocalDate.now().minusDays(1));
+        sitting.setEndDate(LocalDate.now().plusDays(1));
+        sitting.setCorrelation(correlation);
+        sitting = paperRepository.save(sitting);
+
+        String createResponse = mockMvc.perform(post("/papers/{paperId}/marks", sitting.getId())
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID markId = UUID.fromString(objectMapper.readTree(createResponse).get("id").asText());
+
+        mockMvc.perform(get("/papers/{paperId}/marks", sitting.getId())
+                        .param("onlyMine", "true")
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_B_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+
+        // Reading the mark by id resolves through the correlation too — the BFF needs this to work
+        // for correlated papers, since that's what it gates the edit on.
+        mockMvc.perform(get("/papers/{paperId}/marks/{markId}", sitting.getId(), markId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enteredByInstructorId").value(INSTRUCTOR_A_ID.toString()))
+                .andExpect(jsonPath("$.correlationId").value(correlation.getId().toString()))
+                .andExpect(jsonPath("$.paperId").value(org.hamcrest.Matchers.nullValue()));
+
+        PaperMarkUpdateRequest update = new PaperMarkUpdateRequest();
+        update.setTotalMarks(new BigDecimal("90.000"));
+
+        mockMvc.perform(patch("/papers/{paperId}/marks/{markId}", sitting.getId(), markId)
+                        .header("Authorization", bearerTokenFor(INSTRUCTOR_A_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(update)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.correlationId").value(correlation.getId().toString()))
+                .andExpect(jsonPath("$.paperId").value(org.hamcrest.Matchers.nullValue()));
     }
 
 }

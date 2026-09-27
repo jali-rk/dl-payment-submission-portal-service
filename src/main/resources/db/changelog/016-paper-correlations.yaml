@@ -1,0 +1,188 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016-paper-correlations
+      author: claude
+      comment: >
+        One real exam paper is created as two paper-events with different windows linked to
+        different payment portals (e.g. Oct 5-7 on the September portal for early access, Oct 5-9
+        on the October portal). A student who paid both months got a slot from each - two QR codes
+        for one paper, scannable twice - and their marks and leaderboard were split across the two.
+        A paper_correlation groups those paper-events and owns what belongs to the real paper: the
+        mark scheme, the marks and the leaderboard. Everything here is additive and nullable: a
+        paper-event without a correlation keeps behaving exactly as before, and no existing row is
+        rewritten.
+      changes:
+        - createTable:
+            tableName: paper_correlations
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+              # Typed by an admin and used to pick the correlation when creating a paper-event.
+              # Matching is by id, never by this string, so renaming it is always safe.
+              - column:
+                  name: code
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              # What instructors and students see in place of either paper-event's own title.
+              - column:
+                  name: display_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mcq_max_marks
+                  type: numeric(9,3)
+              - column:
+                  name: structured_max_marks
+                  type: numeric(9,3)
+              - column:
+                  name: essay_max_marks
+                  type: numeric(9,3)
+              - column:
+                  name: leaderboard_published
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: leaderboard_last_generated_at
+                  type: timestamp(6)
+              - column:
+                  name: leaderboard_last_generated_by
+                  type: uuid
+        - addUniqueConstraint:
+            tableName: paper_correlations
+            columnNames: code
+            constraintName: uq_paper_correlations_code
+
+        # --- papers -> correlation -------------------------------------------------------------
+        # SET NULL rather than CASCADE: deleting a correlation must never delete paper-events.
+        # (The service only permits deleting one that has no paper-events left anyway.)
+        - addColumn:
+            tableName: papers
+            columns:
+              - column:
+                  name: correlation_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_correlation
+            baseTableName: papers
+            baseColumnNames: correlation_id
+            referencedTableName: paper_correlations
+            referencedColumnNames: id
+            onDelete: SET NULL
+        - createIndex:
+            tableName: papers
+            indexName: idx_papers_correlation_id
+            columns:
+              - column:
+                  name: correlation_id
+
+        # --- paper_marks: owned by a paper-event OR a correlation ------------------------------
+        # paper_id becomes nullable so a mark can hang off a correlation instead. Every existing
+        # row keeps its paper_id, and because Postgres treats NULLs as distinct in a unique
+        # constraint, the existing uq_paper_marks_paper_student keeps working untouched.
+        - dropNotNullConstraint:
+            tableName: paper_marks
+            columnName: paper_id
+            columnDataType: uuid
+        - addColumn:
+            tableName: paper_marks
+            columns:
+              - column:
+                  name: correlation_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_mark_correlation
+            baseTableName: paper_marks
+            baseColumnNames: correlation_id
+            referencedTableName: paper_correlations
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: paper_marks
+            columnNames: correlation_id, student_id
+            constraintName: uq_paper_marks_correlation_student
+        - createIndex:
+            tableName: paper_marks
+            indexName: idx_paper_marks_correlation_id_leaderboard_rank
+            columns:
+              - column:
+                  name: correlation_id
+              - column:
+                  name: leaderboard_rank
+        # Spelled with CASE rather than Postgres's num_nonnulls() so the same statement also runs
+        # on the H2 database the tests boot against.
+        - sql:
+            comment: A mark belongs to exactly one owner - a paper-event or a correlation, never both or neither.
+            sql: >
+              ALTER TABLE paper_marks
+              ADD CONSTRAINT ck_paper_marks_owner
+              CHECK ((CASE WHEN paper_id IS NULL THEN 0 ELSE 1 END
+                    + CASE WHEN correlation_id IS NULL THEN 0 ELSE 1 END) = 1)
+            rollback: ALTER TABLE paper_marks DROP CONSTRAINT ck_paper_marks_owner
+
+        # --- paper_slots: extendable window + one slot per student per correlation -------------
+        # valid_until NULL means "use the paper-event's own end_date", so nothing needs backfilling
+        # and an untagged slot behaves exactly as before.
+        - addColumn:
+            tableName: paper_slots
+            columns:
+              - column:
+                  name: valid_until
+                  type: date
+              - column:
+                  name: correlation_id
+                  type: uuid
+              - column:
+                  name: student_id
+                  type: uuid
+        - addForeignKeyConstraint:
+            constraintName: fk_paper_slot_correlation
+            baseTableName: paper_slots
+            baseColumnNames: correlation_id
+            referencedTableName: paper_correlations
+            referencedColumnNames: id
+            onDelete: SET NULL
+        # student_id duplicates what payment_submissions already knows. It is denormalised here
+        # solely so the "does this student already hold a slot in this correlation?" question can
+        # be answered - and enforced - without a join. Backfilled so the column is never a
+        # half-truth.
+        # Correlated subquery rather than Postgres's UPDATE ... FROM, so this also runs on H2.
+        - sql:
+            comment: Backfill student_id from each slot's payment submission.
+            sql: >
+              UPDATE paper_slots
+              SET student_id = (SELECT sub.student_id FROM payment_submissions sub
+                                WHERE sub.id = paper_slots.payment_submission_id)
+              WHERE student_id IS NULL
+            rollback: UPDATE paper_slots SET student_id = NULL
+        # The real guard against two concurrent approvals (one per portal) both deciding no
+        # sibling exists and each creating a slot. No filter needed: both databases treat NULLs
+        # as distinct in a unique constraint, so the countless slots with no correlation never
+        # collide with each other - only two slots naming the same correlation and student do.
+        - addUniqueConstraint:
+            tableName: paper_slots
+            columnNames: correlation_id, student_id
+            constraintName: uq_paper_slots_correlation_student
