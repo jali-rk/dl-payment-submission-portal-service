@@ -41,6 +41,13 @@ public class PaperCreateRequest {
     private List<UUID> linkedPortalIds;
 
     /**
+     * The correlation this paper-event belongs to, or null if it stands alone. When set, the
+     * mark scheme, marks and leaderboard belong to the correlation and are shared with its other
+     * sitting(s) of the same real paper.
+     */
+    private UUID correlationId;
+
+    /**
      * Optional mark scheme (which sections apply and their max marks). Can be omitted here and
      * set later via {@code PUT /papers/{paperId}/mark-scheme} instead.
      */

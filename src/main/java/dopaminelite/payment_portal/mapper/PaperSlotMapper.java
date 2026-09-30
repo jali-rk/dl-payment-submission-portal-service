@@ -41,9 +41,15 @@ public class PaperSlotMapper {
         response.setId(slot.getId());
         response.setQrToken(slot.getQrToken());
         response.setStatus(PaperSlotStatus.compute(
-                today, slot.getPaper().getStartDate(), slot.getPaper().getEndDate(), slot.getConsumedAt()));
+                today, slot.getPaper().getStartDate(), slot.effectiveEndDate(), slot.getConsumedAt()));
         response.setPaperId(slot.getPaper().getId());
-        response.setPaperTitle(slot.getPaper().getTitle());
+        // The correlation's display name when there is one: a student whose slot was created by
+        // one sitting but extended by another must not be shown either sitting's own title, and
+        // the instructor scanning it should see the paper, not which sitting issued the code.
+        response.setPaperTitle(slot.getCorrelation() != null
+                ? slot.getCorrelation().getDisplayName()
+                : slot.getPaper().getTitle());
+        response.setValidUntil(slot.effectiveEndDate());
         response.setSubmissionId(submission.getId());
         response.setPaymentStatus(submission.getStatus());
         response.setStudentId(submission.getStudentId());

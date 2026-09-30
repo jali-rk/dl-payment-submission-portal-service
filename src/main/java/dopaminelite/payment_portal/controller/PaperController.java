@@ -122,9 +122,10 @@ public class PaperController {
     @PatchMapping("/{paperId}")
     public ResponseEntity<PaperResponse> updatePaper(
             @PathVariable UUID paperId,
-            @Valid @RequestBody PaperUpdateRequest request
+            @Valid @RequestBody PaperUpdateRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        PaperResponse response = paperService.updatePaper(paperId, request);
+        PaperResponse response = paperService.updatePaper(paperId, request, actorId(authorizationHeader));
         return ResponseEntity.ok(response);
     }
 
@@ -141,10 +142,32 @@ public class PaperController {
     @PutMapping("/{paperId}/mark-scheme")
     public ResponseEntity<PaperResponse> updateMarkScheme(
             @PathVariable UUID paperId,
-            @Valid @RequestBody MarkSchemeDto request
+            @Valid @RequestBody MarkSchemeDto request,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        PaperResponse response = paperService.updateMarkScheme(paperId, request);
+        PaperResponse response = paperService.updateMarkScheme(paperId, request, actorId(authorizationHeader));
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Takes a paper-event out of its correlation, leaving it standalone.
+     *
+     * <p>A separate endpoint rather than a null {@code correlationId} on the update: in a partial
+     * update an absent field means "leave this alone", so there is no way to say "remove it" in the
+     * body without inventing a magic value.
+     *
+     * @param paperId the UUID of the paper-event
+     * @param authorizationHeader the caller's bearer token, used to attribute the change
+     * @return the paper-event, now without a correlation
+     * @throws dopaminelite.payment_portal.exception.ResourceNotFoundException if no paper exists with the given ID
+     * @throws dopaminelite.payment_portal.exception.ValidationException if it isn't in a correlation, has already started, or its correlation already has marks or issued QR codes
+     */
+    @DeleteMapping("/{paperId}/correlation")
+    public ResponseEntity<PaperResponse> removeCorrelation(
+            @PathVariable UUID paperId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        return ResponseEntity.ok(paperService.removeCorrelation(paperId, actorId(authorizationHeader)));
     }
 
     /**
@@ -155,9 +178,21 @@ public class PaperController {
      * @throws dopaminelite.payment_portal.exception.ValidationException if the paper has any paper slots and/or marks recorded against it
      */
     @DeleteMapping("/{paperId}")
-    public ResponseEntity<Void> deletePaper(@PathVariable UUID paperId) {
-        paperService.deletePaper(paperId);
+    public ResponseEntity<Void> deletePaper(
+            @PathVariable UUID paperId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        paperService.deletePaper(paperId, actorId(authorizationHeader));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The admin behind a change, for the audit trail. Null rather than a placeholder when the
+     * token can't be read: an entry that honestly says "unknown" is more useful later than one
+     * that names an id nobody made.
+     */
+    private UUID actorId(String authorizationHeader) {
+        return jwtUserIdExtractor.extractUserId(authorizationHeader).orElse(null);
     }
 
     /**

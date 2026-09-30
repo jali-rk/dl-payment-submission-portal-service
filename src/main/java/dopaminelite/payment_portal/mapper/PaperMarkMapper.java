@@ -26,7 +26,15 @@ public class PaperMarkMapper {
 
         PaperMarkResponse response = new PaperMarkResponse();
         response.setId(mark.getId());
-        response.setPaperId(mark.getPaper().getId());
+        // Exactly one of these is set - a mark belongs either to a standalone paper-event or to
+        // the correlation grouping several sittings of one paper. paperId is deliberately left
+        // null in the latter case rather than filled with an arbitrary member's id, which would
+        // read as "this mark is on that sitting" and isn't true of either of them.
+        response.setPaperId(mark.getPaper() != null ? mark.getPaper().getId() : null);
+        response.setCorrelationId(mark.getCorrelation() != null ? mark.getCorrelation().getId() : null);
+        response.setPaperTitle(mark.getCorrelation() != null
+                ? mark.getCorrelation().getDisplayName()
+                : mark.getPaper().getTitle());
         response.setStudentId(mark.getStudentId());
         response.setStudent(toStudentDto(mark.getStudentSnapshot()));
         response.setMcqMarks(mark.getMcqMarks());

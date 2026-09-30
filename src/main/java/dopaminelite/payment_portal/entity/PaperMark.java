@@ -21,13 +21,27 @@ import java.util.UUID;
 @Setter
 @Entity
 @Table(name = "paper_marks", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"paper_id", "student_id"})
+    @UniqueConstraint(columnNames = {"paper_id", "student_id"}),
+    @UniqueConstraint(columnNames = {"correlation_id", "student_id"})
 })
 public class PaperMark extends AuditableEntity {
 
+    /**
+     * The paper-event this mark belongs to, or null when it belongs to a {@link #correlation}
+     * instead. Exactly one of the two is always set — enforced in the database by
+     * {@code ck_paper_marks_owner}. See {@link MarkOwner} for why a mark can have either owner.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "paper_id", nullable = false)
+    @JoinColumn(name = "paper_id")
     private Paper paper;
+
+    /**
+     * The correlation this mark belongs to, when the paper was sat across more than one
+     * paper-event, or null when it belongs to a standalone {@link #paper}.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "correlation_id")
+    private PaperCorrelation correlation;
 
     /**
      * The student's ID as resolved from the BFF's student-by-code-number lookup at entry time.
@@ -91,5 +105,20 @@ public class PaperMark extends AuditableEntity {
      */
     @Column(name = "leaderboard_rank")
     private Integer rank;
+
+    /**
+     * Points this mark at whichever kind of owner it belongs to, clearing the other side so the
+     * exactly-one-owner invariant can't be broken by setting a new owner without unsetting the
+     * old one.
+     */
+    public void assignOwner(MarkOwner owner) {
+        if (owner instanceof PaperCorrelation paperCorrelation) {
+            this.correlation = paperCorrelation;
+            this.paper = null;
+        } else {
+            this.paper = (Paper) owner;
+            this.correlation = null;
+        }
+    }
 
 }

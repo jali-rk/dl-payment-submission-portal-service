@@ -6,11 +6,17 @@ import dopaminelite.payment_portal.dto.paper.PaperCreateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperResponse;
 import dopaminelite.payment_portal.dto.paper.PaperUpdateRequest;
 import dopaminelite.payment_portal.dto.paper.PaperWindowFilter;
+import dopaminelite.payment_portal.entity.MarkOwner;
 import dopaminelite.payment_portal.entity.Paper;
+import dopaminelite.payment_portal.entity.PaperCorrelation;
+import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaymentPortal;
+import dopaminelite.payment_portal.entity.StudentSnapshot;
+import dopaminelite.payment_portal.entity.enums.PaperAuditAction;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaperMapper;
+import dopaminelite.payment_portal.repository.PaperCorrelationRepository;
 import dopaminelite.payment_portal.repository.PaperMarkRepository;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.repository.PaperSlotRepository;
@@ -22,9 +28,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing paper business logic: creation, retrieval, updates, and validation.
@@ -37,9 +45,12 @@ public class PaperService {
     private final PaperRepository paperRepository;
     private final PaymentPortalRepository portalRepository;
     private final PaperMarkRepository paperMarkRepository;
+    private final PaperCorrelationRepository correlationRepository;
+    private final MarkOwnerResolver markOwnerResolver;
     private final PaperSlotRepository paperSlotRepository;
     private final PaperMapper paperMapper;
     private final CalendarEventService calendarEventService;
+    private final PaperAuditService paperAuditService;
 
     /**
      * Retrieves a paginated list of papers with optional filtering.
@@ -73,7 +84,7 @@ public class PaperService {
      */
     public PaginatedResponse<PaperResponse> listPublishedLeaderboardPapers(int limit, int offset) {
         Pageable pageable = PageRequest.of(offset / limit, limit);
-        Page<Paper> paperPage = paperRepository.findByLeaderboardPublishedTrueOrderByStartDateDesc(pageable);
+        Page<Paper> paperPage = paperRepository.findWithPublishedLeaderboard(pageable);
 
         List<PaperResponse> items = paperPage.getContent().stream()
                 .map(paperMapper::toResponse)
@@ -117,12 +128,28 @@ public class PaperService {
         paper.setCreatedByAdminId(adminId);
         paper.setLinkedPortals(resolvePortals(request.getLinkedPortalIds()));
 
+        if (request.getCorrelationId() != null) {
+            paper.setCorrelation(requireCorrelation(request.getCorrelationId()));
+        }
+
         if (request.getMarkScheme() != null) {
             validateMarkSchemeShape(request.getMarkScheme());
-            applyMarkScheme(paper, request.getMarkScheme());
+            // Applied to the correlation when there is one, so the sittings of a paper share a
+            // single scheme. Joining a correlation that already has one with a *different* scheme
+            // is refused rather than silently overwriting what the other sitting is marked against.
+            MarkOwner owner = markOwnerResolver.ownerOf(paper);
+            requireMarkSchemeCompatible(owner, request.getMarkScheme());
+            applyMarkScheme(owner, request.getMarkScheme());
         }
 
         Paper savedPaper = paperRepository.save(paper);
+        paperAuditService.record(savedPaper.getId(), savedPaper.getCorrelation(), PaperAuditAction.PAPER_CREATED,
+                String.format("'%s' %s..%s, portals: %s%s", savedPaper.getTitle(),
+                        savedPaper.getStartDate(), savedPaper.getEndDate(), describePortals(savedPaper),
+                        savedPaper.getCorrelation() == null
+                                ? ""
+                                : ", correlation: " + savedPaper.getCorrelation().getCode()),
+                adminId);
         calendarEventService.createPaperEvent(savedPaper);
         return paperMapper.toResponse(savedPaper);
     }
@@ -139,20 +166,31 @@ public class PaperService {
      *         marks for the paper first to unlock it)
      */
     @Transactional
-    public PaperResponse updateMarkScheme(UUID paperId, MarkSchemeDto scheme) {
+    public PaperResponse updateMarkScheme(UUID paperId, MarkSchemeDto scheme, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
 
         validateMarkSchemeShape(scheme);
 
-        long existingMarkCount = paperMarkRepository.countByPaperId(paperId);
+        // Counted and applied against whatever owns this paper-event's grading. For a paper-event
+        // in a correlation that is the correlation, so the scheme is shared by the sittings rather
+        // than duplicated per sitting - and, critically, the lock can't be sidestepped by editing
+        // the scheme through the sibling paper-event, which has no marks of its own.
+        MarkOwner owner = markOwnerResolver.ownerOf(paper);
+
+        long existingMarkCount = paperMarkRepository.countByOwnerId(owner.getId());
         if (existingMarkCount > 0) {
             throw ValidationException.markSchemeLocked(paperId, existingMarkCount);
         }
 
-        applyMarkScheme(paper, scheme);
+        applyMarkScheme(owner, scheme);
 
         Paper updatedPaper = paperRepository.save(paper);
+        paperAuditService.record(paperId, paper.getCorrelation(), PaperAuditAction.MARK_SCHEME_CHANGED,
+                String.format("mcq=%s, structured=%s, essay=%s%s",
+                        scheme.getMcqMaxMarks(), scheme.getStructuredMaxMarks(), scheme.getEssayMaxMarks(),
+                        paper.getCorrelation() == null ? "" : " (shared by " + paper.getCorrelation().getCode() + ")"),
+                actorId);
         return paperMapper.toResponse(updatedPaper);
     }
 
@@ -167,9 +205,16 @@ public class PaperService {
      * @throws ValidationException if the resulting validity window is invalid, or linkedPortalIds is present but empty
      */
     @Transactional
-    public PaperResponse updatePaper(UUID paperId, PaperUpdateRequest request) {
+    public PaperResponse updatePaper(UUID paperId, PaperUpdateRequest request, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        // Captured before anything is applied, so the trail can say what actually changed rather
+        // than just what was sent.
+        LocalDate previousStart = paper.getStartDate();
+        LocalDate previousEnd = paper.getEndDate();
+        String previousPortals = describePortals(paper);
+        PaperCorrelation previousCorrelation = paper.getCorrelation();
 
         if (request.getTitle() != null) {
             paper.setTitle(request.getTitle());
@@ -192,9 +237,51 @@ public class PaperService {
             paper.setLinkedPortals(resolvePortals(request.getLinkedPortalIds()));
         }
 
+        if (request.getCorrelationId() != null) {
+            applyCorrelationChange(paper, requireCorrelation(request.getCorrelationId()), actorId);
+        }
+
         Paper updatedPaper = paperRepository.save(paper);
+        recordWindowAndPortalChanges(updatedPaper, previousStart, previousEnd, previousPortals,
+                previousCorrelation, actorId);
         calendarEventService.syncPaperDates(paperId, updatedPaper.getStartDate(), updatedPaper.getEndDate());
         return paperMapper.toResponse(updatedPaper);
+    }
+
+    /**
+     * Records the two changes that quietly alter who is entitled to sit a paper: moving its window,
+     * and re-pointing which payments unlock it. Both are written only when the value actually
+     * differs, so the trail stays readable rather than one entry per save.
+     */
+    private void recordWindowAndPortalChanges(Paper paper, LocalDate previousStart, LocalDate previousEnd,
+                                              String previousPortals, PaperCorrelation previousCorrelation,
+                                              UUID actorId) {
+        if (!previousStart.equals(paper.getStartDate()) || !previousEnd.equals(paper.getEndDate())) {
+            paperAuditService.record(paper.getId(), paper.getCorrelation(), PaperAuditAction.DATES_CHANGED,
+                    String.format("%s..%s -> %s..%s", previousStart, previousEnd,
+                            paper.getStartDate(), paper.getEndDate()),
+                    actorId);
+        }
+
+        String currentPortals = describePortals(paper);
+        if (!previousPortals.equals(currentPortals)) {
+            paperAuditService.record(paper.getId(), paper.getCorrelation(), PaperAuditAction.PORTALS_CHANGED,
+                    String.format("%s -> %s", previousPortals, currentPortals), actorId);
+        }
+
+        // Detaching is only reachable here when a correlation change was rejected partway; an
+        // attach records itself inside applyCorrelationChange, where the old value is still known.
+        if (previousCorrelation != null && paper.getCorrelation() == null) {
+            paperAuditService.record(paper.getId(), previousCorrelation, PaperAuditAction.CORRELATION_DETACHED,
+                    String.format("left %s", previousCorrelation.getCode()), actorId);
+        }
+    }
+
+    private String describePortals(Paper paper) {
+        return paper.getLinkedPortals().stream()
+                .map(PaymentPortal::getDisplayName)
+                .sorted()
+                .collect(Collectors.joining(", "));
     }
 
     /**
@@ -206,14 +293,23 @@ public class PaperService {
      *         against it — remove those first
      */
     @Transactional
-    public void deletePaper(UUID paperId) {
+    public void deletePaper(UUID paperId, UUID actorId) {
         Paper paper = paperRepository.findById(paperId)
                 .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
 
+        // countByPaperId, not countByOwnerId: a paper-event in a correlation holds no marks of its
+        // own, and the correlation's marks belong to the other sitting too - they are not this
+        // paper-event's dependents and must not block deleting it.
         if (paperSlotRepository.existsByPaperId(paperId) || paperMarkRepository.countByPaperId(paperId) > 0) {
             throw ValidationException.paperHasDependents(paperId);
         }
 
+        // Recorded before the delete, while the paper's own details are still readable - and kept
+        // afterwards, since the trail holds bare ids rather than foreign keys precisely so it
+        // outlives what it describes.
+        paperAuditService.record(paperId, paper.getCorrelation(), PaperAuditAction.PAPER_DELETED,
+                String.format("'%s' %s..%s", paper.getTitle(), paper.getStartDate(), paper.getEndDate()),
+                actorId);
         paperRepository.delete(paper);
     }
 
@@ -233,10 +329,183 @@ public class PaperService {
         }
     }
 
-    private void applyMarkScheme(Paper paper, MarkSchemeDto scheme) {
-        paper.setMcqMaxMarks(scheme.getMcqMaxMarks());
-        paper.setStructuredMaxMarks(scheme.getStructuredMaxMarks());
-        paper.setEssayMaxMarks(scheme.getEssayMaxMarks());
+    private PaperCorrelation requireCorrelation(UUID correlationId) {
+        return correlationRepository.findById(correlationId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Correlation not found with id: " + correlationId));
+    }
+
+    /**
+     * Moves a paper-event into a correlation, refusing when doing so would rewrite history.
+     *
+     * <p>Three things block it:
+     * <ul>
+     *   <li><b>It has already started.</b> Students may already be sitting it, and the change
+     *       decides who gets a QR code for what.</li>
+     *   <li><b>It has marks of its own.</b> Those belong to this paper-event; joining a
+     *       correlation moves grading to the correlation and would strand them, invisible.</li>
+     *   <li><b>A student would end up holding two slots for one paper.</b> See
+     *       {@link #requireNoSlotCollision} — the admin is told who, and cancels one.</li>
+     * </ul>
+     *
+     * <p>Note this only ever moves a paper-event <em>into</em> a correlation. Removing it from one
+     * without naming another isn't reachable from here: {@code updatePaper} calls this only when a
+     * correlation id was given, since an absent id means "leave this alone" rather than "remove it".
+     *
+     * <p>Existing slots are no obstacle — they are brought along. A slot records its correlation
+     * when it is created, and that stamp is what the duplicate-QR check searches on, so slots
+     * predating the move are restamped here rather than left invisible to it. That is what makes
+     * tagging safe at any point, including as a repair once payments are already flowing.
+     */
+    private void applyCorrelationChange(Paper paper, PaperCorrelation correlation, UUID actorId) {
+        if (correlation.equals(paper.getCorrelation())) {
+            return;
+        }
+        if (!paper.getStartDate().isAfter(LocalDate.now())) {
+            throw ValidationException.correlationChangeNotAllowed(paper.getId(), "it has already started");
+        }
+        if (paperMarkRepository.countByPaperId(paper.getId()) > 0) {
+            throw ValidationException.correlationChangeNotAllowed(paper.getId(), "it already has marks of its own");
+        }
+
+        requireNoSlotCollision(paper, correlation);
+
+        PaperCorrelation previous = paper.getCorrelation();
+        paper.setCorrelation(correlation);
+        paperRepository.saveAndFlush(paper);
+        int restamped = paperSlotRepository.stampCorrelationOnSlots(paper.getId(), correlation);
+
+        paperAuditService.record(paper.getId(), correlation, PaperAuditAction.CORRELATION_ATTACHED,
+                String.format("%s -> %s, %d existing slot(s) brought along",
+                        previous == null ? "none" : previous.getCode(), correlation.getCode(), restamped),
+                actorId);
+    }
+
+    /**
+     * Takes a paper-event out of its correlation, leaving it standalone again.
+     *
+     * <p>Exists because staff make mistakes: a paper-event tagged into the wrong group, or tagged
+     * when it shouldn't have been, previously had no way back — and since a correlation can only be
+     * deleted once nothing is linked to it, that also left an unwanted correlation permanently
+     * undeletable. Grouping is freely reversible right up to the point where it has had real
+     * consequences, and frozen after.
+     *
+     * <p>Refused once any of those consequences exist, mirroring the rules on joining:
+     * <ul>
+     *   <li><b>The paper-event has started.</b> Students may be sitting it.</li>
+     *   <li><b>The correlation holds marks.</b> They belong to the paper as a whole, not to either
+     *       sitting, so there is no honest way to decide which ones would come back out.</li>
+     *   <li><b>Any QR code has been issued under the correlation.</b> Codes carry its stamp and a
+     *       student's window may have been widened because of it.</li>
+     * </ul>
+     *
+     * @param paperId the paper-event to remove from its correlation
+     * @param actorId the admin doing it, for the audit trail
+     * @return the paper-event, now without a correlation
+     * @throws ResourceNotFoundException if no paper exists with that ID
+     * @throws ValidationException if it isn't in a correlation, or any of the above applies
+     */
+    @Transactional
+    public PaperResponse removeCorrelation(UUID paperId, UUID actorId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        PaperCorrelation correlation = paper.getCorrelation();
+        if (correlation == null) {
+            throw new ValidationException("Paper " + paperId + " is not part of a correlation");
+        }
+        if (!paper.getStartDate().isAfter(LocalDate.now())) {
+            throw ValidationException.correlationChangeNotAllowed(paperId, "it has already started");
+        }
+        if (paperMarkRepository.countByOwnerId(correlation.getId()) > 0) {
+            throw ValidationException.correlationChangeNotAllowed(paperId,
+                    "its correlation '" + correlation.getCode() + "' already has marks recorded against it");
+        }
+        if (paperSlotRepository.existsByCorrelationId(correlation.getId())) {
+            throw ValidationException.correlationChangeNotAllowed(paperId,
+                    "QR codes have already been issued under its correlation '" + correlation.getCode() + "'");
+        }
+
+        paper.setCorrelation(null);
+        Paper saved = paperRepository.saveAndFlush(paper);
+
+        paperAuditService.record(paperId, correlation, PaperAuditAction.CORRELATION_DETACHED,
+                String.format("%s -> none", correlation.getCode()), actorId);
+
+        return paperMapper.toResponse(saved);
+    }
+
+    /**
+     * Refuses the move when a student would end up holding two slots for one paper.
+     *
+     * <p>Only possible where they already do: they paid both months and the other sitting was
+     * already grouped, so they were issued two QR codes before this grouping could stop it. The
+     * database won't let one student hold two slots in a correlation, and nothing here should
+     * quietly delete a code a student may already be carrying — so the admin is told exactly who
+     * is affected and decides which to cancel.
+     */
+    private void requireNoSlotCollision(Paper paper, PaperCorrelation correlation) {
+        List<PaperSlot> colliding =
+                paperSlotRepository.findSlotsCollidingWithCorrelation(paper.getId(), correlation.getId());
+        if (colliding.isEmpty()) {
+            return;
+        }
+
+        String students = colliding.stream()
+                .map(slot -> {
+                    StudentSnapshot snapshot = slot.getPaymentSubmission().getStudentSnapshot();
+                    return snapshot.getCodeNumber() == null
+                            ? snapshot.getFullName()
+                            : String.format("%s (%s)", snapshot.getFullName(), snapshot.getCodeNumber());
+                })
+                .collect(Collectors.joining(", "));
+
+        throw ValidationException.correlationSlotCollision(correlation.getCode(), colliding.size(), students);
+    }
+
+    /**
+     * Refuses a mark scheme that disagrees with the one its correlation already carries. The
+     * scheme belongs to the correlation, so the two sittings of a paper cannot be marked out of
+     * different totals; an empty scheme on the correlation means this is simply the first to set it.
+     */
+    private void requireMarkSchemeCompatible(MarkOwner owner, MarkSchemeDto scheme) {
+        if (!(owner instanceof PaperCorrelation correlation)) {
+            return;
+        }
+        boolean correlationHasScheme = correlation.getMcqMaxMarks() != null
+                || correlation.getStructuredMaxMarks() != null
+                || correlation.getEssayMaxMarks() != null;
+        if (!correlationHasScheme) {
+            return;
+        }
+
+        boolean same = sameMaxMark(correlation.getMcqMaxMarks(), scheme.getMcqMaxMarks())
+                && sameMaxMark(correlation.getStructuredMaxMarks(), scheme.getStructuredMaxMarks())
+                && sameMaxMark(correlation.getEssayMaxMarks(), scheme.getEssayMaxMarks());
+        if (!same) {
+            throw ValidationException.correlationMarkSchemeMismatch(correlation.getCode());
+        }
+    }
+
+    /**
+     * Compares two max marks by value, not by representation.
+     *
+     * <p>{@code BigDecimal.equals} also compares scale, so the 40.000 that comes back from a
+     * {@code numeric(9,3)} column is "different" from the 40 an admin typed. That would reject a
+     * sitting joining with the very scheme it is meant to share — most obviously when a paper-event
+     * is duplicated, since the copy arrives prefilled with the original's marks.
+     */
+    private boolean sameMaxMark(BigDecimal stored, BigDecimal submitted) {
+        if (stored == null || submitted == null) {
+            return stored == submitted;
+        }
+        return stored.compareTo(submitted) == 0;
+    }
+
+    private void applyMarkScheme(MarkOwner owner, MarkSchemeDto scheme) {
+        owner.setMcqMaxMarks(scheme.getMcqMaxMarks());
+        owner.setStructuredMaxMarks(scheme.getStructuredMaxMarks());
+        owner.setEssayMaxMarks(scheme.getEssayMaxMarks());
     }
 
     private List<PaymentPortal> resolvePortals(List<UUID> portalIds) {

@@ -1,8 +1,11 @@
 package dopaminelite.payment_portal.service;
 
+import dopaminelite.payment_portal.entity.Paper;
 import dopaminelite.payment_portal.entity.PaperSlot;
 import dopaminelite.payment_portal.entity.PaperSlotCreationResult;
+import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.enums.PaperSlotCreationOutcome;
+import dopaminelite.payment_portal.exception.ResourceNotFoundException;
 import dopaminelite.payment_portal.repository.PaperRepository;
 import dopaminelite.payment_portal.repository.PaperSlotCreationResultRepository;
 import dopaminelite.payment_portal.repository.PaperSlotRepository;
@@ -53,10 +56,72 @@ public class PaperSlotWriter {
             return null;
         }
 
+        // Loaded rather than getReferenceById'd: the paper's correlation and the submission's
+        // student are copied onto the slot below, and a lazy proxy can't be read for those.
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+        PaymentSubmission submission = paymentSubmissionRepository.findById(submissionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Payment submission not found with id: " + submissionId));
+
         PaperSlot slot = new PaperSlot();
-        slot.setPaper(paperRepository.getReferenceById(paperId));
-        slot.setPaymentSubmission(paymentSubmissionRepository.getReferenceById(submissionId));
+        slot.setPaper(paper);
+        slot.setPaymentSubmission(submission);
+        // Denormalised so "one slot per student per correlation" can be enforced by an index.
+        slot.setCorrelation(paper.getCorrelation());
+        slot.setStudentId(submission.getStudentId());
         return paperSlotRepository.saveAndFlush(slot);
+    }
+
+    /**
+     * Extends the slot this student already holds for the same real paper, instead of issuing a
+     * second one.
+     *
+     * <p>A paper sat in the first week of a month exists as two paper-events — an early-access
+     * window on last month's portal, the full window on this month's. A student who paid both
+     * months matches both, and used to receive a slot from each: two QR codes for one paper, each
+     * independently scannable. Now the first approval creates the slot and any later one merely
+     * widens its window to the later end date.
+     *
+     * <p>Only ever moves the end date later, so the order the two payments happen to be approved
+     * in doesn't matter, and re-running an approval changes nothing. A consumed slot is extended
+     * but stays consumed — the student sat the paper, and a second payment doesn't entitle them to
+     * sit it again.
+     *
+     * @return the student's existing slot for this correlation, now extended if it needed to be,
+     *         or null if this paper-event has no correlation or they hold no slot in it yet
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaperSlot extendCorrelatedSiblingIfAny(UUID submissionId, UUID paperId) {
+        Paper paper = paperRepository.findById(paperId)
+                .orElseThrow(() -> new ResourceNotFoundException("Paper not found with id: " + paperId));
+
+        if (paper.getCorrelation() == null) {
+            return null;
+        }
+
+        PaymentSubmission submission = paymentSubmissionRepository.findById(submissionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Payment submission not found with id: " + submissionId));
+
+        PaperSlot sibling = paperSlotRepository
+                .findFirstByCorrelationIdAndStudentIdOrderByCreatedAtAsc(
+                        paper.getCorrelation().getId(), submission.getStudentId())
+                .orElse(null);
+        if (sibling == null) {
+            return null;
+        }
+
+        // Reading effectiveEndDate() here, inside this transaction, also initialises the sibling's
+        // lazy paper association — which the caller depends on: it reads effectiveEndDate() again
+        // once this transaction has closed, and on a slot that needed no extension (so validUntil
+        // is still null) that would otherwise hit a detached lazy proxy. Keep this call before the
+        // return, even if the comparison itself is ever restructured.
+        if (paper.getEndDate().isAfter(sibling.effectiveEndDate())) {
+            // Managed entity in this transaction; flushed on commit.
+            sibling.setValidUntil(paper.getEndDate());
+        }
+        return sibling;
     }
 
     /**

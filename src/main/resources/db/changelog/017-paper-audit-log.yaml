@@ -1,0 +1,58 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-paper-audit-log
+      author: claude
+      comment: >
+        Paper-events decide who gets a QR code for what: which portal they're linked to, what
+        window they run for, and which correlation groups them with the other sitting of the same
+        paper. Those decisions are made by hand, months apart, and until now nothing recorded who
+        changed what or when - so a student holding an unexpected code, or two, could only be
+        explained by guesswork. This is an append-only trail of those decisions. Deliberately a
+        plain table written at the few points that matter, not Hibernate Envers, which would mirror
+        every entity and bury the handful of events anyone actually wants to read.
+      changes:
+        - createTable:
+            tableName: paper_audit_log
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: paper_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              # Deliberately not a foreign key: the trail has to survive the paper-event or
+              # correlation it describes being deleted, which is exactly when it is most useful.
+              - column:
+                  name: correlation_id
+                  type: uuid
+              - column:
+                  name: action
+                  type: varchar(40)
+                  constraints:
+                    nullable: false
+              # Compact "old -> new" summary of what changed, for human reading.
+              - column:
+                  name: details
+                  type: varchar(2000)
+              # The admin who made the change, or null where the request carried no usable token.
+              - column:
+                  name: actor_id
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: paper_audit_log
+            indexName: idx_paper_audit_log_paper_id_created_at
+            columns:
+              - column:
+                  name: paper_id
+              - column:
+                  name: created_at

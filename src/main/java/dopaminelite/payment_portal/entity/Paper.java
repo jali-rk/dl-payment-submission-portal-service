@@ -24,7 +24,7 @@ import java.util.UUID;
 @Setter
 @Entity
 @Table(name = "papers")
-public class Paper extends AuditableEntity {
+public class Paper extends AuditableEntity implements MarkOwner {
 
     @Column(nullable = false)
     private String title;
@@ -55,6 +55,21 @@ public class Paper extends AuditableEntity {
      */
     @Column(nullable = true)
     private UUID createdByAdminId;
+
+    /**
+     * The correlation grouping this paper-event with the other sitting(s) of the same real paper,
+     * or null if this paper stands alone — which is the case for every paper that existed before
+     * correlations, and for any the admin never tags.
+     *
+     * <p>When set, the mark scheme, marks and leaderboard below are no longer this row's: they
+     * belong to the correlation, and {@code MarkOwnerResolver} routes every read and write there
+     * instead. The fields stay on this entity because untagged papers still use them, and because
+     * a paper can only be tagged before it has any marks — so there is never live data in both
+     * places for the same paper.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "correlation_id")
+    private PaperCorrelation correlation;
 
     /**
      * Maximum mark for this paper's MCQ section, or null if the paper has no MCQ section.
@@ -106,5 +121,15 @@ public class Paper extends AuditableEntity {
      */
     @Column(name = "leaderboard_last_generated_by")
     private UUID leaderboardLastGeneratedBy;
+
+    /**
+     * A standalone paper is named by its own title. A paper-event inside a correlation is not —
+     * see {@link MarkOwner#getDisplayTitle()} — but it is never the resolved owner in that case,
+     * so this is only ever reached for the standalone kind.
+     */
+    @Override
+    public String getDisplayTitle() {
+        return title;
+    }
 
 }
