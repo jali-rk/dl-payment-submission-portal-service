@@ -97,6 +97,7 @@ public class PaymentPortalService {
         portal.setVisibility(request.getIsPublished() != null && request.getIsPublished() 
             ? PortalVisibility.PUBLISHED 
             : PortalVisibility.HIDDEN);
+        portal.setIsPaymentAllowed(request.getIsPaymentAllowed() != null ? request.getIsPaymentAllowed() : true);
         portal.setCreatedByAdminId(adminId);
         
         PaymentPortal savedPortal = portalRepository.save(portal);
@@ -149,7 +150,13 @@ public class PaymentPortalService {
             // Sync isPublished with visibility
             portal.setIsPublished(request.getVisibility() == PortalVisibility.PUBLISHED);
         }
-        
+
+        // Deliberately not synced with visibility: turning payments off must leave the portal
+        // and its papers visible.
+        if (request.getIsPaymentAllowed() != null) {
+            portal.setIsPaymentAllowed(request.getIsPaymentAllowed());
+        }
+
         PaymentPortal updatedPortal = portalRepository.save(portal);
         return portalMapper.toResponse(updatedPortal);
     }

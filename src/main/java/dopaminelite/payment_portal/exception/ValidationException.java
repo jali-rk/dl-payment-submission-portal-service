@@ -40,6 +40,18 @@ public class ValidationException extends RuntimeException {
     }
 
     /**
+     * Factory method for when a payment is submitted to a portal that has payments turned off.
+     *
+     * @param portalName the portal's display name
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException paymentsNotAllowed(String portalName) {
+        return new ValidationException(
+            String.format("Payments are closed for '%s'", portalName)
+        );
+    }
+
+    /**
      * Factory method for when a mark scheme has no section enabled.
      *
      * @return a new ValidationException with appropriate message

@@ -51,7 +51,12 @@ public class PaymentPortalResponse {
      * Visibility status of the portal.
      */
     private PortalVisibility visibility;
-    
+
+    /**
+     * Whether students can currently submit payments to the portal.
+     */
+    private Boolean isPaymentAllowed;
+
     /**
      * UUID of the admin who created the portal.
      */

@@ -56,7 +56,15 @@ public class PaymentPortal extends AuditableEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PortalVisibility visibility = PortalVisibility.PUBLISHED;
-    
+
+    /**
+     * Whether students can still submit payments to this portal. Independent of visibility:
+     * a published portal with payments off stays visible (with its papers) but rejects
+     * new submissions.
+     */
+    @Column(name = "is_payment_allowed", nullable = false)
+    private Boolean isPaymentAllowed = true;
+
     /**
      * UUID of the admin user who created this portal.
      */
