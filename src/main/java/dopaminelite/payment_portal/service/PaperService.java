@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -78,6 +79,11 @@ public class PaperService {
      * student-facing leaderboard discovery, since students otherwise have no way to browse
      * papers at all.
      *
+     * <p>A correlation is listed once, through one of its paper-events — and that paper-event's own
+     * dates are only one sitting's window, which may not be the student's own. A leaderboard covers
+     * the whole paper, so an entry for a correlation carries the whole paper's span (earliest start
+     * to latest end) instead, the same for every student.
+     *
      * @param limit maximum number of results per page
      * @param offset number of results to skip
      * @return paginated response containing paper list and total count
@@ -90,7 +96,34 @@ public class PaperService {
                 .map(paperMapper::toResponse)
                 .toList();
 
+        widenToCorrelationSpan(items);
+
         return new PaginatedResponse<>(items, paperPage.getTotalElements());
+    }
+
+    private void widenToCorrelationSpan(List<PaperResponse> items) {
+        List<UUID> correlationIds = items.stream()
+                .filter(item -> item.getCorrelation() != null)
+                .map(item -> item.getCorrelation().getId())
+                .distinct()
+                .toList();
+        if (correlationIds.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, PaperRepository.CorrelationDateSpan> spans = paperRepository.findDateSpans(correlationIds).stream()
+                .collect(Collectors.toMap(PaperRepository.CorrelationDateSpan::getCorrelationId, span -> span));
+
+        for (PaperResponse item : items) {
+            if (item.getCorrelation() == null) {
+                continue;
+            }
+            PaperRepository.CorrelationDateSpan span = spans.get(item.getCorrelation().getId());
+            if (span != null) {
+                item.setStartDate(span.getStartDate());
+                item.setEndDate(span.getEndDate());
+            }
+        }
     }
 
     /**
