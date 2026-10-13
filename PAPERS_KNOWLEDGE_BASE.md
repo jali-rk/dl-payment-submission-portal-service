@@ -158,6 +158,12 @@ payment doesn't entitle anyone to sit the paper twice.
 - **Instructors and students** see **one paper**, named by the correlation's display name. A student
   who only paid October must never be shown "Nov 2 – 6" when their own access ends on the 4th.
 
+The one exception is the student's **list of published leaderboards**, where a correlation appears
+once and shows the **whole paper's span** (earliest start to latest end) for every student. It is a
+results list, and the leaderboard covers the whole paper, so there is no single student's window to
+show. Which flag decides whether it's listed depends on who owns the grading: a standalone paper's
+own, or the correlation's.
+
 A main admin can check this for themselves under **Papers → Instructor View**, which opens the
 instructor's own screens read-only — the same pages instructors use, with every action withheld, so
 looking can't change real marks. It additionally tags each entry with its correlation code, since an
@@ -234,8 +240,6 @@ the admin-facing rules.
 
 Accurate as of this document:
 
-- The **student leaderboard list** isn't collapsed per correlation yet. A student in a correlated
-  paper sees the correlation's display name on each entry, but a pair still shows as two rows there.
 - The **audit trail** is written but has no screen — read `paper_audit_log` with SQL for now.
 
 ---

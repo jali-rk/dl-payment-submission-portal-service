@@ -89,6 +89,34 @@ class PaperCorrelationControllerTest {
     }
 
     @Test
+    @DisplayName("the student leaderboard list shows each real paper once, with the whole paper's dates")
+    void publishedLeaderboardList_oneEntryPerRealPaper_withFullSpan() throws Exception {
+        // A published standalone paper, a hidden one, and a published correlation made of an
+        // early-access paper-event (Oct 5-7) and a full-week one (Oct 5-9).
+        Paper standalone = paper("Published standalone", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 3), null);
+        standalone.setLeaderboardPublished(true);
+        paperRepository.saveAndFlush(standalone);
+        paper("Hidden standalone", LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 12), null);
+
+        PaperCorrelation oct = correlation("OCT-W1");
+        oct.setLeaderboardPublished(true);
+        correlationRepository.saveAndFlush(oct);
+        paper("Early access", LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 7), oct);
+        paper("Full week", LocalDate.of(2026, 10, 5), LocalDate.of(2026, 10, 9), oct);
+
+        mockMvc.perform(get("/papers/leaderboards/published"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2))
+                // Most recent first: the correlation, then the standalone paper
+                .andExpect(jsonPath("$.items[0].correlation.code").value("OCT-W1"))
+                .andExpect(jsonPath("$.items[0].startDate").value("2026-10-05"))
+                .andExpect(jsonPath("$.items[0].endDate").value("2026-10-09"))
+                .andExpect(jsonPath("$.items[1].title").value("Published standalone"))
+                .andExpect(jsonPath("$.items[1].startDate").value("2026-09-01"))
+                .andExpect(jsonPath("$.items[1].endDate").value("2026-09-03"));
+    }
+
+    @Test
     @DisplayName("a code is uppercased on save, so case can never split one paper into two")
     void createCorrelation_uppercasesCode() throws Exception {
         mockMvc.perform(post("/correlations")
