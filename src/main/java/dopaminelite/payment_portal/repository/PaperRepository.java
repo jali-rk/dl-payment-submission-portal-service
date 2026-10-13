@@ -82,11 +82,51 @@ public interface PaperRepository extends JpaRepository<Paper, UUID> {
      */
     List<Paper> findByCorrelationId(UUID correlationId);
 
-    @Query("SELECT p FROM Paper p WHERE "
-            + "(p.correlation IS NULL AND p.leaderboardPublished = true) OR "
-            + "(p.correlation IS NOT NULL AND p.correlation.leaderboardPublished = true AND "
-            + " p.createdAt = (SELECT MIN(m.createdAt) FROM Paper m WHERE m.correlation = p.correlation)) "
+    /**
+     * Papers a student can open the leaderboard of: one entry per real paper.
+     *
+     * <p>Which flag counts depends on who owns the grading. A standalone paper-event is published
+     * by its own flag; a paper-event in a correlation by the correlation's, whatever its own flag
+     * says. A correlation appears once, represented by the paper-event created first — the
+     * leaderboard resolves to the correlation from any of them, so which one stands in doesn't
+     * matter, only that it is exactly one.
+     *
+     * <p>The correlation is joined with a LEFT JOIN on purpose. Reading
+     * {@code p.correlation.leaderboardPublished} straight in the WHERE makes Hibernate inner join
+     * the correlations table, which silently discards every paper-event that has no correlation —
+     * so no standalone paper ever listed, even with no correlation in existence.
+     *
+     * <p>Ties on creation time are broken by id, so two paper-events created in the same instant
+     * can never both stand in for one correlation.
+     *
+     * @param pageable pagination information
+     * @return a page of paper-events, most recently started first
+     */
+    @Query("SELECT p FROM Paper p LEFT JOIN p.correlation c WHERE "
+            + "(c IS NULL AND p.leaderboardPublished = true) OR "
+            + "(c IS NOT NULL AND c.leaderboardPublished = true AND NOT EXISTS ("
+            + "   SELECT 1 FROM Paper o WHERE o.correlation = c AND "
+            + "   (o.createdAt < p.createdAt OR (o.createdAt = p.createdAt AND o.id < p.id)))) "
             + "ORDER BY p.startDate DESC")
     Page<Paper> findWithPublishedLeaderboard(Pageable pageable);
+
+    /**
+     * The overall date range of each given correlation: earliest start to latest end across all of
+     * its paper-events. One query for the whole page of a list rather than one per row.
+     *
+     * @param correlationIds the correlations to measure
+     * @return one row per correlation that has paper-events
+     */
+    @Query("SELECT p.correlation.id AS correlationId, MIN(p.startDate) AS startDate, MAX(p.endDate) AS endDate "
+            + "FROM Paper p WHERE p.correlation.id IN :correlationIds GROUP BY p.correlation.id")
+    List<CorrelationDateSpan> findDateSpans(@Param("correlationIds") List<UUID> correlationIds);
+
+    interface CorrelationDateSpan {
+        UUID getCorrelationId();
+
+        LocalDate getStartDate();
+
+        LocalDate getEndDate();
+    }
 
 }
