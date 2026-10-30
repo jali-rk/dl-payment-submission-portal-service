@@ -47,5 +47,10 @@ public class PaymentPortalCreateRequest {
      * Whether the portal should be published immediately. Defaults to false.
      */
     private Boolean isPublished = false;
-    
+
+    /**
+     * Whether students can submit payments to the portal. Defaults to true.
+     */
+    private Boolean isPaymentAllowed = true;
+
 }

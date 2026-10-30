@@ -28,5 +28,10 @@ public class PaymentPortalUpdateRequest {
      * Updated visibility setting.
      */
     private PortalVisibility visibility;
-    
+
+    /**
+     * Updated payment availability. Does not affect visibility.
+     */
+    private Boolean isPaymentAllowed;
+
 }

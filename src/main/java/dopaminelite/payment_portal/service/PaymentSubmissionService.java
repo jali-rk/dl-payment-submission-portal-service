@@ -64,7 +64,11 @@ public class PaymentSubmissionService {
     public PaymentSubmissionResponse createSubmission(UUID portalId, PaymentSubmissionCreateRequest request) {
         PaymentPortal portal = portalRepository.findById(portalId)
                 .orElseThrow(() -> ResourceNotFoundException.portalNotFound(portalId));
-        
+
+        if (!Boolean.TRUE.equals(portal.getIsPaymentAllowed())) {
+            throw ValidationException.paymentsNotAllowed(portal.getDisplayName());
+        }
+
         // Validate portal name confirmation
         if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
             throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
