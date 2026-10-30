@@ -33,3 +33,5 @@ databaseChangeLog:
       file: db/changelog/016-paper-correlations.yaml
   - include:
       file: db/changelog/017-paper-audit-log.yaml
+  - include:
+      file: db/changelog/018-portal-payment-allowed.yaml

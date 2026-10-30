@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 018-portal-payment-allowed
+      author: claude
+      comment: >
+        Separates "can students see this portal" from "can students still pay into it". Closing a
+        month used to mean hiding its portal, which also hid that month's papers from the students
+        who had paid. With this flag a portal can stay published, papers and all, while refusing
+        new payment submissions. Existing portals default to true so nothing changes until an
+        admin turns payments off.
+      changes:
+        - addColumn:
+            tableName: payment_portals
+            columns:
+              - column:
+                  name: is_payment_allowed
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
