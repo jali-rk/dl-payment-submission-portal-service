@@ -9,6 +9,7 @@ import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.enums.PortalVisibility;
 import dopaminelite.payment_portal.exception.DuplicateResourceException;
 import dopaminelite.payment_portal.exception.ResourceNotFoundException;
+import dopaminelite.payment_portal.exception.ValidationException;
 import dopaminelite.payment_portal.mapper.PaymentPortalMapper;
 import dopaminelite.payment_portal.repository.PaymentPortalRepository;
 import lombok.RequiredArgsConstructor;
@@ -98,6 +99,10 @@ public class PaymentPortalService {
             ? PortalVisibility.PUBLISHED 
             : PortalVisibility.HIDDEN);
         portal.setIsPaymentAllowed(request.getIsPaymentAllowed() != null ? request.getIsPaymentAllowed() : true);
+        portal.setAllowSlip(request.getAllowSlip() != null ? request.getAllowSlip() : true);
+        portal.setAllowOnline(request.getAllowOnline() != null ? request.getAllowOnline() : false);
+        portal.setOnlineFee(request.getOnlineFee());
+        validatePaymentMethods(portal);
         portal.setCreatedByAdminId(adminId);
         
         PaymentPortal savedPortal = portalRepository.save(portal);
@@ -157,6 +162,17 @@ public class PaymentPortalService {
             portal.setIsPaymentAllowed(request.getIsPaymentAllowed());
         }
 
+        if (request.getAllowSlip() != null) {
+            portal.setAllowSlip(request.getAllowSlip());
+        }
+        if (request.getAllowOnline() != null) {
+            portal.setAllowOnline(request.getAllowOnline());
+        }
+        if (request.getOnlineFee() != null) {
+            portal.setOnlineFee(request.getOnlineFee());
+        }
+        validatePaymentMethods(portal);
+
         PaymentPortal updatedPortal = portalRepository.save(portal);
         return portalMapper.toResponse(updatedPortal);
     }
@@ -185,4 +201,22 @@ public class PaymentPortalService {
         portalRepository.saveAll(portals);
     }
     
+
+    /**
+     * Rejects a portal configuration students couldn't pay into: no method enabled, or online
+     * payment enabled without a fee. Closing a portal to payments is what isPaymentAllowed is for.
+     */
+    private void validatePaymentMethods(PaymentPortal portal) {
+        boolean slip = Boolean.TRUE.equals(portal.getAllowSlip());
+        boolean online = Boolean.TRUE.equals(portal.getAllowOnline());
+        if (!slip && !online) {
+            throw new ValidationException(
+                "At least one payment method (bank slip or online) must be enabled. "
+                    + "To stop accepting payments, turn off isPaymentAllowed instead.");
+        }
+        if (online && (portal.getOnlineFee() == null || portal.getOnlineFee().signum() <= 0)) {
+            throw new ValidationException("An online fee greater than zero is required to enable online payments");
+        }
+    }
+
 }

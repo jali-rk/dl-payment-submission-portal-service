@@ -35,3 +35,5 @@ databaseChangeLog:
       file: db/changelog/017-paper-audit-log.yaml
   - include:
       file: db/changelog/018-portal-payment-allowed.yaml
+  - include:
+      file: db/changelog/019-payhere-online-payments.yaml

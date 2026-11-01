@@ -1,0 +1,198 @@
+databaseChangeLog:
+  - changeSet:
+      id: 019-portal-payment-methods
+      author: claude
+      comment: >
+        Lets each portal choose which payment methods students may use. allow_slip defaults to
+        true and allow_online to false so every existing portal keeps behaving exactly as before
+        (bank slip only) until an admin turns online payments on. online_fee is the amount charged
+        through PayHere. It lives on the portal so the server, never the browser, decides how much
+        a student pays. It is required only while allow_online is true, and the service enforces that.
+      changes:
+        - addColumn:
+            tableName: payment_portals
+            columns:
+              - column:
+                  name: allow_slip
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: allow_online
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: online_fee
+                  type: numeric(10,2)
+
+  - changeSet:
+      id: 019-submission-payment-method
+      author: claude
+      comment: >
+        Records how a submission was paid. Every existing row is a bank slip upload, so the column
+        defaults to SLIP.
+      changes:
+        - addColumn:
+            tableName: payment_submissions
+            columns:
+              - column:
+                  name: payment_method
+                  type: varchar(30)
+                  defaultValue: SLIP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: payment_submissions
+            indexName: idx_payment_submissions_payment_method
+            columns:
+              - column:
+                  name: payment_method
+
+  - changeSet:
+      id: 019-payment-transactions
+      author: claude
+      # An earlier draft declared the timestamp columns as plain "timestamp" and was applied to the
+      # local dev DB before being changed to "timestamp(6)". In PostgreSQL those are the same type
+      # (precision 6 is the default), so the already-applied schema is identical; accept its checksum.
+      validCheckSum:
+        - 9:fb0bc8fa25e5ec64e8471ed4a9909b83
+      comment: >
+        One row per PayHere checkout attempt. The student snapshot is captured when the checkout
+        starts because PayHere's server-to-server notification carries no student context, and
+        the APPROVED submission created on success needs it.
+      changes:
+        - createTable:
+            tableName: payment_transactions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: order_id
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_payment_transactions_order_id
+              - column:
+                  name: portal_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_payment_transactions_portal
+                    references: payment_portals(id)
+              - column:
+                  name: student_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: amount
+                  type: numeric(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: currency
+                  type: varchar(3)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: gateway
+                  type: varchar(30)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: gateway_payment_id
+                  type: varchar(64)
+              - column:
+                  name: gateway_status_code
+                  type: integer
+              - column:
+                  name: gateway_status_message
+                  type: varchar(255)
+              - column:
+                  name: gateway_method
+                  type: varchar(30)
+              - column:
+                  name: submission_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_payment_transactions_submission
+                    references: payment_submissions(id)
+              - column:
+                  name: completed_at
+                  type: timestamp(6)
+              - column:
+                  name: student_code_number
+                  type: varchar(50)
+              - column:
+                  name: student_full_name
+                  type: varchar(255)
+              - column:
+                  name: student_email
+                  type: varchar(255)
+              - column:
+                  name: student_whatsapp_number
+                  type: varchar(20)
+              - column:
+                  name: student_secondary_phone_number
+                  type: varchar(20)
+              - column:
+                  name: student_address
+                  type: varchar(500)
+              - column:
+                  name: student_nic
+                  type: varchar(20)
+              - column:
+                  name: student_school
+                  type: varchar(255)
+              - column:
+                  name: student_paper_writing_mode
+                  type: varchar(20)
+              - column:
+                  name: student_paper_center_id
+                  type: varchar(100)
+              - column:
+                  name: student_study_medium
+                  type: varchar(20)
+              - column:
+                  name: created_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_by
+                  type: varchar(255)
+              - column:
+                  name: updated_by
+                  type: varchar(255)
+        - createIndex:
+            tableName: payment_transactions
+            indexName: idx_payment_transactions_student_portal
+            columns:
+              - column:
+                  name: student_id
+              - column:
+                  name: portal_id
+        - createIndex:
+            tableName: payment_transactions
+            indexName: idx_payment_transactions_status
+            columns:
+              - column:
+                  name: status

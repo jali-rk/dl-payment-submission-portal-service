@@ -30,6 +30,9 @@ public class PaymentPortalMapper {
         response.setIsPublished(portal.getIsPublished());
         response.setVisibility(portal.getVisibility());
         response.setIsPaymentAllowed(portal.getIsPaymentAllowed());
+        response.setAllowSlip(portal.getAllowSlip());
+        response.setAllowOnline(portal.getAllowOnline());
+        response.setOnlineFee(portal.getOnlineFee());
         response.setCreatedByAdminId(portal.getCreatedByAdminId());
         response.setCreatedAt(portal.getCreatedAt());
         response.setUpdatedAt(portal.getUpdatedAt());

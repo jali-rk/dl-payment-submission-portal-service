@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.dto.submission;
 
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -37,6 +38,11 @@ public class PaymentSubmissionResponse {
      * Current approval status of the submission.
      */
     private SubmissionStatus status;
+
+    /**
+     * How the submission was paid (SLIP or ONLINE_PAYHERE).
+     */
+    private PaymentMethod paymentMethod;
     
     /**
      * Reason provided when the submission was rejected.

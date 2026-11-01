@@ -4,6 +4,7 @@ import dopaminelite.payment_portal.dto.common.PaginatedResponse;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionCreateRequest;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionResponse;
 import dopaminelite.payment_portal.dto.submission.PaymentSubmissionStatusUpdateRequest;
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.service.PaymentSubmissionService;
@@ -59,6 +60,7 @@ public class PaymentSubmissionController {
      * @param year filter by portal's year, optional
      * @param studyMedium filter by student's study medium, optional
      * @param paperCenter filter by paper center ID, optional
+     * @param paymentMethod filter by payment method (SLIP or ONLINE_PAYHERE), optional
      * @param submittedAtFrom filter submissions from this datetime (inclusive), optional
      * @param submittedAtTo filter submissions until this datetime (inclusive), optional
      * @param limit maximum number of results per page, defaults to 10
@@ -74,6 +76,7 @@ public class PaymentSubmissionController {
             @RequestParam(required = false) Integer year,
             @RequestParam(required = false) StudyMedium studyMedium,
             @RequestParam(required = false) String paperCenter,
+            @RequestParam(required = false) PaymentMethod paymentMethod,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtTo,
             @RequestParam(defaultValue = "10") int limit,
@@ -95,7 +98,7 @@ public class PaymentSubmissionController {
         }
 
         PaginatedResponse<PaymentSubmissionResponse> response = submissionService.listSubmissions(
-            studentId, portalId, status, month, year, studyMedium, paperCenter, fromDate, toDate, limit, offset
+            studentId, portalId, status, month, year, studyMedium, paperCenter, paymentMethod, fromDate, toDate, limit, offset
         );
 
         log.info("[CONTROLLER] Successfully retrieved submissions - total count: {}, returned items: {}",

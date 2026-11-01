@@ -52,6 +52,19 @@ public class ValidationException extends RuntimeException {
     }
 
     /**
+     * Factory method for when a student uses a payment method the portal has turned off.
+     *
+     * @param portalName the portal's display name
+     * @param methodLabel human-readable method name, e.g. "Bank slip"
+     * @return a new ValidationException with appropriate message
+     */
+    public static ValidationException paymentMethodNotAllowed(String portalName, String methodLabel) {
+        return new ValidationException(
+            String.format("%s payments are not accepted for '%s'", methodLabel, portalName)
+        );
+    }
+
+    /**
      * Factory method for when a mark scheme has no section enabled.
      *
      * @return a new ValidationException with appropriate message

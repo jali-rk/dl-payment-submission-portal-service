@@ -8,6 +8,7 @@ import dopaminelite.payment_portal.dto.submission.UploadedFileRefDto;
 import dopaminelite.payment_portal.entity.PaymentPortal;
 import dopaminelite.payment_portal.entity.PaymentSubmission;
 import dopaminelite.payment_portal.entity.UploadedFile;
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.event.PaymentSubmissionApprovedEvent;
@@ -69,6 +70,10 @@ public class PaymentSubmissionService {
             throw ValidationException.paymentsNotAllowed(portal.getDisplayName());
         }
 
+        if (!Boolean.TRUE.equals(portal.getAllowSlip())) {
+            throw ValidationException.paymentMethodNotAllowed(portal.getDisplayName(), "Bank slip");
+        }
+
         // Validate portal name confirmation
         if (!portal.getDisplayName().equals(request.getPortalNameConfirmation())) {
             throw ValidationException.portalNameMismatch(portal.getDisplayName(), request.getPortalNameConfirmation());
@@ -93,6 +98,7 @@ public class PaymentSubmissionService {
         submission.setStudentId(request.getStudentId());
         submission.setPortal(portal);
         submission.setStatus(SubmissionStatus.PENDING);
+        submission.setPaymentMethod(PaymentMethod.SLIP);
         submission.setPortalNameAtSubmission(portal.getDisplayName());
         submission.setStudentSnapshot(submissionMapper.toStudentSnapshotEntity(request.getStudentSnapshot()));
 
@@ -125,6 +131,7 @@ public class PaymentSubmissionService {
      * @param year filter by portal's year, null for no filtering
      * @param studyMedium filter by student's study medium, null for no filtering
      * @param paperCenterId filter by paper center ID, null for no filtering
+     * @param paymentMethod filter by payment method (SLIP or ONLINE_PAYHERE), null for no filtering
      * @param fromDate filter submissions from this date (inclusive), null for no filtering
      * @param toDate filter submissions until this date (inclusive), null for no filtering
      * @param limit maximum number of results per page
@@ -139,6 +146,7 @@ public class PaymentSubmissionService {
             Integer year,
             StudyMedium studyMedium,
             String paperCenterId,
+            PaymentMethod paymentMethod,
             LocalDateTime fromDate,
             LocalDateTime toDate,
             int limit,
@@ -172,7 +180,7 @@ public class PaymentSubmissionService {
                 studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate);
 
         Page<PaymentSubmission> submissionPage = submissionRepository.findByAdminFilters(
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate, pageable
+                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, paymentMethod, fromDate, toDate, pageable
         );
         
         log.info("[SERVICE] Repository query executed - total elements: {}, current page size: {}, total pages: {}",

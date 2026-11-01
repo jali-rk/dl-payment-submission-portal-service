@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 /**
  * Request DTO for creating a new payment portal.
  * All fields are validated before processing.
@@ -52,5 +54,22 @@ public class PaymentPortalCreateRequest {
      * Whether students can submit payments to the portal. Defaults to true.
      */
     private Boolean isPaymentAllowed = true;
+
+    /**
+     * Whether students may pay by uploading a bank slip.
+     */
+    private Boolean allowSlip = true;
+
+    /**
+     * Whether students may pay online through PayHere. Requires onlineFee.
+     */
+    private Boolean allowOnline = false;
+
+    /**
+     * Amount charged for an online payment, in the configured currency.
+     */
+    @DecimalMin(value = "0.01", message = "Online fee must be greater than zero")
+    @Digits(integer = 8, fraction = 2, message = "Online fee must have at most 2 decimal places")
+    private BigDecimal onlineFee;
 
 }

@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.controller;
 
 import dopaminelite.payment_portal.dto.admin.SubmissionExportRequest;
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.service.AdminExportService;
@@ -57,6 +58,7 @@ public class AdminPaymentSubmissionExportController {
             @RequestParam(required = false) Integer year,
             @RequestParam(required = false) StudyMedium studyMedium,
             @RequestParam(required = false) String paperCenter,
+            @RequestParam(required = false) PaymentMethod paymentMethod,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime submittedAtTo,
             @Valid @RequestBody SubmissionExportRequest request
@@ -77,7 +79,7 @@ public class AdminPaymentSubmissionExportController {
         }
 
         byte[] excelData = exportService.exportSubmissions(
-                studentId, portalId, status, month, year, studyMedium, paperCenter, fromDate, toDate, request.getColumns()
+                studentId, portalId, status, month, year, studyMedium, paperCenter, paymentMethod, fromDate, toDate, request.getColumns()
         );
 
         // Generate filename with timestamp

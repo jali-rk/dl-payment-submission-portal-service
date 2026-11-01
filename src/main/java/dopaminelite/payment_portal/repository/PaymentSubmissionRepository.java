@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.repository;
 
 import dopaminelite.payment_portal.entity.PaymentSubmission;
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import org.springframework.data.domain.Page;
@@ -92,6 +93,7 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
      * @param paperCenterName filter by paper center name — WORKAROUND for legacy data where the upstream
      *        BFF/User Service stored the name instead of the UUID. Not ideal but no alternative at the
      *        given time. TODO: Remove once upstream data is corrected.
+     * @param paymentMethod filter by payment method, null for no filtering
      * @param fromDate filter submissions from this date (inclusive), null for no filtering
      * @param toDate filter submissions until this date (inclusive), null for no filtering
      * @param pageable pagination information
@@ -107,6 +109,7 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
            "(:year IS NULL OR p.portal.year = :year) AND " +
            "(:studyMedium IS NULL OR p.studentSnapshot.studyMedium = :studyMedium) AND " +
            "(:paperCenterId IS NULL OR p.studentSnapshot.paperCenterId = :paperCenterId OR p.studentSnapshot.paperCenterId = :paperCenterName) AND " +
+           "(:paymentMethod IS NULL OR p.paymentMethod = :paymentMethod) AND " +
            "(p.submittedAt >= COALESCE(:fromDate, p.submittedAt)) AND " +
            "(p.submittedAt <= COALESCE(:toDate, p.submittedAt)) " +
            "ORDER BY p.submittedAt DESC")
@@ -119,6 +122,7 @@ public interface PaymentSubmissionRepository extends JpaRepository<PaymentSubmis
             @Param("studyMedium") StudyMedium studyMedium,
             @Param("paperCenterId") String paperCenterId,
             @Param("paperCenterName") String paperCenterName,
+            @Param("paymentMethod") PaymentMethod paymentMethod,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             Pageable pageable

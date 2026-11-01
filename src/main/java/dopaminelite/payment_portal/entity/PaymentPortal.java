@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -64,6 +65,24 @@ public class PaymentPortal extends AuditableEntity {
      */
     @Column(name = "is_payment_allowed", nullable = false)
     private Boolean isPaymentAllowed = true;
+
+    /**
+     * Whether students may pay by uploading a bank slip for admin review.
+     */
+    @Column(name = "allow_slip", nullable = false)
+    private Boolean allowSlip = true;
+
+    /**
+     * Whether students may pay online through PayHere. Requires {@link #onlineFee}.
+     */
+    @Column(name = "allow_online", nullable = false)
+    private Boolean allowOnline = false;
+
+    /**
+     * Amount charged for an online payment. Set by the admin, never by the student's browser.
+     */
+    @Column(name = "online_fee", precision = 10, scale = 2)
+    private BigDecimal onlineFee;
 
     /**
      * UUID of the admin user who created this portal.

@@ -1,5 +1,6 @@
 package dopaminelite.payment_portal.entity;
 
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -41,6 +42,14 @@ public class PaymentSubmission extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SubmissionStatus status = SubmissionStatus.PENDING;
+
+    /**
+     * How this submission was paid. SLIP submissions carry uploaded files and wait for admin
+     * review; ONLINE_PAYHERE submissions have no files and are created already APPROVED.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false, length = 30)
+    private PaymentMethod paymentMethod = PaymentMethod.SLIP;
     
     /**
      * Reason provided by admin when rejecting a submission. Required when status is REJECTED.

@@ -1,6 +1,7 @@
 package dopaminelite.payment_portal.service;
 
 import dopaminelite.payment_portal.entity.PaymentSubmission;
+import dopaminelite.payment_portal.entity.enums.PaymentMethod;
 import dopaminelite.payment_portal.entity.enums.StudyMedium;
 import dopaminelite.payment_portal.entity.enums.SubmissionStatus;
 import dopaminelite.payment_portal.repository.PaymentSubmissionRepository;
@@ -43,6 +44,7 @@ public class AdminExportService {
      * @param year filter by portal's year, null for no filtering
      * @param studyMedium filter by student's study medium, null for no filtering
      * @param paperCenterId filter by paper center ID, null for no filtering
+     * @param paymentMethod filter by payment method, null for no filtering
      * @param fromDate filter submissions from this date (inclusive), null for no filtering
      * @param toDate filter submissions until this date (inclusive), null for no filtering
      * @param columns list of column names to include in the export
@@ -57,6 +59,7 @@ public class AdminExportService {
             Integer year,
             StudyMedium studyMedium,
             String paperCenterId,
+            PaymentMethod paymentMethod,
             LocalDateTime fromDate,
             LocalDateTime toDate,
             List<String> columns
@@ -79,7 +82,7 @@ public class AdminExportService {
         // Fetch all matching submissions (up to a reasonable limit)
         Pageable pageable = PageRequest.of(0, 10000); // Limit to 10000 records for safety
         Page<PaymentSubmission> submissionPage = submissionRepository.findByAdminFilters(
-                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, fromDate, toDate, pageable
+                studentId, portalId, status, month, year, studyMedium, paperCenterId, paperCenterName, paymentMethod, fromDate, toDate, pageable
         );
 
         List<PaymentSubmission> submissions = submissionPage.getContent();
@@ -164,6 +167,7 @@ public class AdminExportService {
             }
             case "Portal", "Portal Name" -> submission.getPortalNameAtSubmission();
             case "Status" -> submission.getStatus() != null ? submission.getStatus().name() : null;
+            case "Payment Method" -> submission.getPaymentMethod() != null ? submission.getPaymentMethod().name() : null;
             case "Submitted At" -> submission.getSubmittedAt() != null ? submission.getSubmittedAt().format(DATE_FORMATTER) : null;
             case "Last Updated" -> submission.getLastUpdatedAt() != null ? submission.getLastUpdatedAt().format(DATE_FORMATTER) : null;
             case "Rejection Reason" -> submission.getRejectionReason();

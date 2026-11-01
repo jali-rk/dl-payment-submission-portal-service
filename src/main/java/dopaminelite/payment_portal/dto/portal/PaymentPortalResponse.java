@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -56,6 +57,21 @@ public class PaymentPortalResponse {
      * Whether students can currently submit payments to the portal.
      */
     private Boolean isPaymentAllowed;
+
+    /**
+     * Whether students may pay by uploading a bank slip.
+     */
+    private Boolean allowSlip;
+
+    /**
+     * Whether students may pay online through PayHere.
+     */
+    private Boolean allowOnline;
+
+    /**
+     * Amount charged for an online payment. Null when online payment has never been set up.
+     */
+    private BigDecimal onlineFee;
 
     /**
      * UUID of the admin who created the portal.

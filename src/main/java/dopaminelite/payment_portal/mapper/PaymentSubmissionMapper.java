@@ -33,6 +33,7 @@ public class PaymentSubmissionMapper {
         response.setStudentId(submission.getStudentId());
         response.setPortalId(submission.getPortal().getId());
         response.setStatus(submission.getStatus());
+        response.setPaymentMethod(submission.getPaymentMethod());
         response.setRejectionReason(submission.getRejectionReason());
         response.setPortalNameAtSubmission(submission.getPortalNameAtSubmission());
         response.setPortal(new PortalRefDto(submission.getPortal().getId(), submission.getPortal().getDisplayName()));
